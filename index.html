@@ -1,0 +1,2267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gen Con Event Planner</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<style>
+/* ================================================================
+   ROOT & RESET
+   ================================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-danger: #ef4444;
+  --color-danger-light: #fef2f2;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fffbeb;
+  --color-success: #22c55e;
+  --color-success-light: #f0fdf4;
+  --color-bg: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-text-faint: #94a3b8;
+  --sidebar-left-w: 256px;
+  --sidebar-right-w: 316px;
+  --header-h: 52px;
+  --hour-h: 72px;
+  --cal-start-h: 7;
+  --cal-end-h: 27;
+  --radius: 6px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.10);
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: var(--color-text); background: var(--color-bg); overflow: hidden; height: 100vh; }
+
+/* ================================================================
+   IMPORT OVERLAY
+   ================================================================ */
+#import-overlay {
+  position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+#import-overlay.hidden { display: none; }
+.import-box {
+  background: #fff; border-radius: 16px; padding: 48px 56px; text-align: center;
+  box-shadow: 0 24px 64px rgba(0,0,0,.25); max-width: 520px; width: 90%;
+}
+.import-box h1 { font-size: 24px; font-weight: 700; color: var(--color-text); margin-bottom: 8px; }
+.import-box .tagline { color: var(--color-text-muted); margin-bottom: 32px; font-size: 14px; }
+.drop-zone {
+  border: 2px dashed var(--color-border-strong); border-radius: 12px;
+  padding: 40px 24px; cursor: pointer; transition: all .15s; margin-bottom: 20px;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--color-primary); background: var(--color-primary-light);
+}
+.drop-zone-icon { font-size: 40px; margin-bottom: 12px; }
+.drop-zone p { color: var(--color-text-muted); font-size: 14px; }
+.drop-zone strong { color: var(--color-primary); }
+#import-status { margin-top: 16px; padding: 12px 16px; border-radius: var(--radius); font-size: 13px; }
+#import-status.info { background: var(--color-primary-light); color: var(--color-primary); }
+#import-status.error { background: var(--color-danger-light); color: var(--color-danger); }
+#import-status.hidden { display: none; }
+.import-progress { margin-top: 8px; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
+.import-progress-bar { height: 100%; background: var(--color-primary); width: 0; transition: width .2s; }
+
+/* ================================================================
+   APP SHELL
+   ================================================================ */
+#app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#app.hidden { display: none; }
+
+/* ================================================================
+   HEADER
+   ================================================================ */
+#header {
+  height: var(--header-h); background: var(--color-surface); border-bottom: 1px solid var(--color-border);
+  display: flex; align-items: center; padding: 0 12px; gap: 12px; flex: none;
+  box-shadow: var(--shadow-sm); z-index: 100;
+}
+.header-title { font-size: 15px; font-weight: 700; color: var(--color-text); white-space: nowrap; }
+.header-title span { color: var(--color-primary); }
+#schedule-meta { font-size: 11px; color: var(--color-text-muted); background: var(--color-bg); padding: 3px 8px; border-radius: 12px; white-space: nowrap; }
+.view-toggle { display: flex; background: var(--color-bg); border-radius: var(--radius); padding: 2px; gap: 1px; }
+.view-btn {
+  padding: 5px 14px; border: none; background: transparent; cursor: pointer;
+  border-radius: calc(var(--radius) - 1px); font-size: 12px; font-weight: 500;
+  color: var(--color-text-muted); transition: all .1s;
+}
+.view-btn.active { background: var(--color-surface); color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.header-spacer { flex: 1; }
+.header-actions { display: flex; align-items: center; gap: 6px; }
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: var(--radius); border: 1px solid transparent; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .1s; white-space: nowrap; }
+.btn-primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border-strong); }
+.btn-secondary:hover { background: var(--color-bg); }
+.btn-ghost { background: transparent; color: var(--color-text-muted); border-color: transparent; }
+.btn-ghost:hover { background: var(--color-bg); color: var(--color-text); }
+.btn-danger { background: var(--color-danger-light); color: var(--color-danger); border-color: #fecaca; }
+.btn-danger:hover { background: #fee2e2; }
+.btn:disabled { opacity: .45; cursor: default; pointer-events: none; }
+#day-nav { display: none; align-items: center; gap: 6px; }
+#day-nav.visible { display: flex; }
+#day-nav .day-nav-label { font-size: 13px; font-weight: 600; min-width: 120px; text-align: center; }
+
+/* ================================================================
+   BODY (three-column)
+   ================================================================ */
+#body { flex: 1; display: flex; overflow: hidden; }
+
+/* ================================================================
+   LEFT SIDEBAR
+   ================================================================ */
+#sidebar-left {
+  width: var(--sidebar-left-w); flex: none; background: var(--color-surface);
+  border-right: 1px solid var(--color-border); overflow-y: auto; display: flex; flex-direction: column;
+}
+.sidebar-section { padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
+.sidebar-section:last-child { border-bottom: none; }
+.section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-faint); margin-bottom: 8px; }
+.search-input {
+  width: 100%; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: var(--radius);
+  font-size: 13px; outline: none; background: var(--color-bg); color: var(--color-text);
+}
+.search-input:focus { border-color: var(--color-primary); background: #fff; }
+.toggle-row { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; font-size: 12px; color: var(--color-text-muted); }
+.toggle-row:hover { color: var(--color-text); }
+.toggle-row input[type=checkbox] { accent-color: var(--color-primary); cursor: pointer; }
+.filter-day-list, .filter-cat-list { display: flex; flex-direction: column; gap: 1px; }
+.filter-check-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.filter-check-item:hover { background: var(--color-bg); }
+.filter-check-item input { accent-color: var(--color-primary); cursor: pointer; }
+.filter-check-label { flex: 1; color: var(--color-text); }
+.filter-check-count { font-size: 10px; color: var(--color-text-faint); background: var(--color-bg); padding: 1px 5px; border-radius: 8px; }
+.filter-select { width: 100%; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 12px; background: var(--color-bg); color: var(--color-text); outline: none; }
+.filter-select:focus { border-color: var(--color-primary); }
+.range-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted); }
+.range-row .filter-select-sm { flex: 1; padding: 5px 6px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 11px; background: var(--color-bg); color: var(--color-text); outline: none; }
+.filter-count { padding: 8px 12px; font-size: 11px; color: var(--color-text-muted); background: var(--color-bg); border-top: 1px solid var(--color-border); }
+.btn-link { background: none; border: none; cursor: pointer; font-size: 11px; color: var(--color-primary); text-decoration: underline; padding: 0; }
+.btn-link:hover { color: var(--color-primary-hover); }
+
+/* ================================================================
+   CENTER CALENDAR PANEL
+   ================================================================ */
+#calendar-panel { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: var(--color-bg); }
+
+/* --- Convention & Day calendar --- */
+.cal-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.cal-header-row {
+  display: flex; flex: none; background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-sm); z-index: 10;
+}
+.cal-gutter-header { width: 52px; flex: none; border-right: 1px solid var(--color-border); }
+.cal-day-headers { flex: 1; display: flex; overflow: hidden; }
+.cal-day-header-cell {
+  flex: 1; min-width: 160px; padding: 8px 10px; border-right: 1px solid var(--color-border);
+  text-align: center; cursor: pointer;
+}
+.cal-day-header-cell:hover { background: var(--color-primary-light); }
+.cal-day-header-cell .day-name { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--color-text-muted); }
+.cal-day-header-cell .day-date { font-size: 18px; font-weight: 700; color: var(--color-text); line-height: 1.2; }
+.cal-day-header-cell.today .day-date { color: var(--color-primary); }
+.cal-scroll-area { flex: 1; overflow: auto; }
+.cal-scroll-inner { display: flex; }
+.cal-time-gutter { width: 52px; flex: none; border-right: 1px solid var(--color-border); }
+.cal-time-label {
+  height: var(--hour-h); display: flex; align-items: flex-start; justify-content: flex-end;
+  padding-right: 8px; padding-top: 2px; font-size: 10px; color: var(--color-text-faint);
+  border-bottom: 1px solid var(--color-border);
+}
+.cal-day-columns { display: flex; flex: 1; }
+.cal-day-col { flex: 1; min-width: 160px; position: relative; border-right: 1px solid var(--color-border); }
+.cal-day-col-inner { position: relative; }
+.cal-hour-line {
+  height: var(--hour-h); border-bottom: 1px solid var(--color-border);
+  box-sizing: border-box;
+}
+.cal-hour-line.half { border-bottom-style: dashed; border-bottom-color: #f1f5f9; }
+.cal-half-line {
+  position: absolute; left: 0; right: 0; border-top: 1px dashed #e8ecf0; pointer-events: none;
+}
+.cal-event {
+  position: absolute; left: 1px; border-radius: 4px; padding: 2px 5px; overflow: hidden;
+  cursor: pointer; border-left: 3px solid; font-size: 11px; line-height: 1.3;
+  transition: filter .1s, box-shadow .1s; z-index: 2; user-select: none;
+}
+.cal-event:hover { filter: brightness(.95); box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 10; }
+.cal-event.scheduled { opacity: 1; }
+.cal-event.browse { opacity: .55; border-left-style: dashed; }
+.cal-event.browse:hover { opacity: .85; }
+.cal-event.conflict { outline: 2px solid var(--color-danger); outline-offset: 1px; }
+.cal-event.dragging { opacity: .4; }
+.cal-event .ev-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event .ev-venue { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
+.cal-event .ev-time { font-size: 10px; opacity: .75; }
+.cal-drop-indicator {
+  position: absolute; left: 2px; right: 2px; height: 3px; background: var(--color-primary);
+  border-radius: 2px; pointer-events: none; z-index: 20; display: none;
+}
+.cal-drop-indicator.visible { display: block; }
+.cal-now-line {
+  position: absolute; left: 0; right: 0; height: 2px; background: var(--color-danger);
+  z-index: 5; pointer-events: none;
+}
+.cal-now-line::before {
+  content: ''; position: absolute; left: -5px; top: -4px;
+  width: 10px; height: 10px; border-radius: 50%; background: var(--color-danger);
+}
+.cal-overflow-badge {
+  position: sticky; bottom: 4px; margin: 4px; padding: 4px 8px;
+  background: var(--color-warning-light); border: 1px solid #fde68a;
+  border-radius: var(--radius); font-size: 10px; color: #92400e; text-align: center;
+}
+.cal-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-muted); gap: 8px; }
+.cal-empty-icon { font-size: 32px; }
+
+/* --- Agenda view --- */
+.agenda-container { flex: 1; overflow-y: auto; padding: 12px; }
+.agenda-day-group { margin-bottom: 20px; }
+.agenda-day-header {
+  font-size: 12px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase;
+  letter-spacing: .05em; padding: 6px 0; margin-bottom: 6px;
+  border-bottom: 2px solid var(--color-border-strong); display: flex; align-items: center; gap: 8px;
+}
+.agenda-day-header .day-badge {
+  background: var(--color-primary); color: #fff; border-radius: 4px;
+  padding: 1px 6px; font-size: 10px;
+}
+.agenda-event {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; margin-bottom: 4px;
+  background: var(--color-surface); border-radius: var(--radius); border: 1px solid var(--color-border);
+  cursor: pointer; transition: all .1s;
+}
+.agenda-event:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.agenda-event.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
+.agenda-event.scheduled-event { border-left: 3px solid var(--color-primary); }
+.agenda-event.conflict-event { border-left: 3px solid var(--color-danger); }
+.agenda-event-cat {
+  border-radius: 4px; padding: 3px 6px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 10px; font-weight: 700; flex: none;
+  white-space: nowrap; align-self: flex-start; margin-top: 2px;
+}
+.agenda-event-body { flex: 1; min-width: 0; }
+.agenda-event-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-event-meta { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
+.agenda-event-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.scheduled-pill { background: var(--color-primary); color: #fff; border-radius: 10px; padding: 2px 7px; font-size: 10px; font-weight: 600; }
+.favorite-btn { background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1; padding: 2px; color: var(--color-text-faint); }
+.favorite-btn.active { color: #f59e0b; }
+.load-more-btn { display: block; width: 100%; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius); background: none; cursor: pointer; color: var(--color-text-muted); font-size: 12px; text-align: center; }
+.load-more-btn:hover { background: var(--color-surface); }
+
+/* ================================================================
+   RIGHT SIDEBAR
+   ================================================================ */
+#sidebar-right {
+  width: var(--sidebar-right-w); flex: none; background: var(--color-surface);
+  border-left: 1px solid var(--color-border); overflow-y: auto; display: flex; flex-direction: column;
+}
+.right-panel-section { padding: 12px; border-bottom: 1px solid var(--color-border); }
+.right-panel-section:last-child { border-bottom: none; }
+.right-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-faint); margin-bottom: 10px; }
+
+/* Schedule summary (default right panel) */
+.schedule-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+.summary-stat { background: var(--color-bg); border-radius: var(--radius); padding: 8px; text-align: center; }
+.summary-stat .stat-val { font-size: 18px; font-weight: 700; color: var(--color-primary); }
+.summary-stat .stat-label { font-size: 10px; color: var(--color-text-muted); }
+.export-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* Recommendations */
+.rec-window { margin-bottom: 10px; }
+.rec-window-time { font-size: 11px; font-weight: 600; color: var(--color-text); margin-bottom: 5px; }
+.rec-event { padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); margin-bottom: 4px; cursor: pointer; font-size: 11px; }
+.rec-event:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
+.rec-event-title { font-weight: 600; }
+.rec-event-meta { color: var(--color-text-muted); font-size: 10px; }
+
+/* Event detail panel */
+.event-detail-header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.event-detail-cat { border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.event-detail-title { font-size: 14px; font-weight: 700; color: var(--color-text); line-height: 1.35; }
+.event-detail-id { font-size: 10px; color: var(--color-text-faint); margin-top: 2px; }
+.event-action-bar { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.conflict-banner {
+  padding: 8px 10px; background: var(--color-danger-light); border: 1px solid #fca5a5;
+  border-radius: var(--radius); margin-bottom: 10px; font-size: 12px; color: var(--color-danger);
+}
+.conflict-banner strong { display: block; margin-bottom: 4px; }
+.conflict-item { font-size: 11px; padding: 2px 0; }
+.alt-sessions { margin-top: 8px; }
+.alt-session { padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); margin-bottom: 4px; cursor: pointer; font-size: 11px; }
+.alt-session:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
+.event-info-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.event-info-table td { padding: 4px 0; vertical-align: top; }
+.event-info-table td:first-child { color: var(--color-text-muted); width: 110px; padding-right: 6px; }
+.event-desc { font-size: 12px; color: var(--color-text); line-height: 1.5; margin-top: 6px; }
+.event-desc.truncated { max-height: 100px; overflow: hidden; position: relative; }
+.expand-desc { background: none; border: none; cursor: pointer; font-size: 11px; color: var(--color-primary); padding: 4px 0; }
+.tickets-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.tickets-badge.available { background: var(--color-success-light); color: #166534; }
+.tickets-badge.soldout { background: var(--color-danger-light); color: var(--color-danger); }
+.empty-right { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 24px; text-align: center; color: var(--color-text-muted); gap: 8px; }
+.empty-right-icon { font-size: 36px; }
+
+/* ================================================================
+   SETTINGS MODAL
+   ================================================================ */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 500; display: flex; align-items: center; justify-content: center; }
+.modal-overlay.hidden { display: none; }
+.modal-card { background: var(--color-surface); border-radius: 12px; padding: 24px; min-width: 340px; box-shadow: var(--shadow-md); }
+.modal-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.setting-row:last-of-type { border-bottom: none; }
+.setting-row label { font-size: 13px; color: var(--color-text); }
+.setting-row input[type=number] { width: 72px; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 13px; text-align: center; outline: none; }
+.setting-row input[type=number]:focus { border-color: var(--color-primary); }
+.modal-footer { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ================================================================
+   TOAST
+   ================================================================ */
+#toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--color-text); color: #fff; padding: 10px 16px; border-radius: 8px;
+  font-size: 13px; box-shadow: var(--shadow-md); animation: toast-in .2s ease;
+  display: flex; align-items: center; gap: 8px; min-width: 200px;
+}
+.toast.success { background: #166534; }
+.toast.error { background: #991b1b; }
+.toast.warning { background: #92400e; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ================================================================
+   MISC
+   ================================================================ */
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-faint); }
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     IMPORT OVERLAY
+     ================================================================ -->
+<div id="import-overlay">
+  <div class="import-box">
+    <h1>Gen Con Event Planner</h1>
+    <p class="tagline">Smart scheduling for the best four days in gaming</p>
+    <div class="drop-zone" id="drop-zone">
+      <div class="drop-zone-icon">📋</div>
+      <p>Drop your Gen Con <strong>.xlsx</strong> here<br>or click to browse</p>
+    </div>
+    <input type="file" id="file-input" accept=".xlsx">
+    <div id="import-status" class="hidden">
+      <div id="import-status-text"></div>
+      <div class="import-progress"><div class="import-progress-bar" id="import-progress-bar"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MAIN APP
+     ================================================================ -->
+<div id="app" class="hidden">
+
+  <!-- Header -->
+  <header id="header">
+    <div class="header-title">Gen Con <span>Event Planner</span></div>
+    <div id="schedule-meta"></div>
+    <div class="view-toggle">
+      <button class="view-btn active" data-view="convention">Convention</button>
+      <button class="view-btn" data-view="day">Day</button>
+      <button class="view-btn" data-view="agenda">Agenda</button>
+    </div>
+    <div id="day-nav">
+      <button class="btn btn-ghost" id="day-prev">&#8249;</button>
+      <div class="day-nav-label" id="day-nav-label"></div>
+      <button class="btn btn-ghost" id="day-next">&#8250;</button>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-actions">
+      <button class="btn btn-ghost" id="undo-btn" disabled>&#8629; Undo</button>
+      <button class="btn btn-ghost" id="settings-btn">&#9881; Settings</button>
+      <button class="btn btn-secondary" id="reimport-btn">Import New File</button>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div id="body">
+
+    <!-- Left Sidebar: Filters -->
+    <aside id="sidebar-left">
+      <div class="sidebar-section">
+        <input type="text" id="search-input" class="search-input" placeholder="Search events, GMs, systems…">
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Quick Filters</div>
+        <label class="toggle-row"><input type="checkbox" id="filter-available"> Available tickets only</label>
+        <label class="toggle-row"><input type="checkbox" id="filter-favorites"> Favorites only</label>
+        <label class="toggle-row"><input type="checkbox" id="filter-scheduled"> My schedule only</label>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Days</div>
+        <div id="filter-days" class="filter-day-list"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Event Type</div>
+        <div id="filter-categories" class="filter-cat-list"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Game System</div>
+        <select id="filter-system" class="filter-select"><option value="">All systems</option></select>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Venue</div>
+        <select id="filter-venue" class="filter-select"><option value="">All venues</option></select>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Start Time</div>
+        <div class="range-row">
+          <select id="filter-time-from" class="filter-select-sm"><option value="">Any</option></select>
+          <span>–</span>
+          <select id="filter-time-to" class="filter-select-sm"><option value="">Any</option></select>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Duration</div>
+        <div class="range-row">
+          <select id="filter-dur-min" class="filter-select-sm">
+            <option value="">Any</option>
+            <option value="30">30+ min</option>
+            <option value="60">1+ hr</option>
+            <option value="120">2+ hrs</option>
+            <option value="240">4+ hrs</option>
+          </select>
+          <span>–</span>
+          <select id="filter-dur-max" class="filter-select-sm">
+            <option value="">Any</option>
+            <option value="60">≤1 hr</option>
+            <option value="120">≤2 hrs</option>
+            <option value="240">≤4 hrs</option>
+            <option value="480">≤8 hrs</option>
+          </select>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Cost</div>
+        <div class="range-row">
+          <select id="filter-cost-min" class="filter-select-sm"><option value="">Any</option></select>
+          <span>–</span>
+          <select id="filter-cost-max" class="filter-select-sm"><option value="">Any</option></select>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <button class="btn-link" id="clear-filters-btn">Clear all filters</button>
+      </div>
+      <div class="filter-count" id="filter-count"></div>
+    </aside>
+
+    <!-- Center: Calendar / Agenda -->
+    <main id="calendar-panel"></main>
+
+    <!-- Right Sidebar: Detail / Tools -->
+    <aside id="sidebar-right">
+      <div id="right-panel"></div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay hidden" id="settings-modal">
+  <div class="modal-card">
+    <h3>⚙ Settings</h3>
+    <div class="setting-row">
+      <label>Same venue travel buffer (min)</label>
+      <input type="number" id="s-same-venue" min="0" max="60" value="5">
+    </div>
+    <div class="setting-row">
+      <label>Different venue travel buffer (min)</label>
+      <input type="number" id="s-cross-venue" min="0" max="60" value="15">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="settings-cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- ================================================================
+     JAVASCRIPT
+     ================================================================ -->
+<script>
+(function () {
+  'use strict';
+
+  const { DateTime } = luxon;
+
+  // ================================================================
+  // SECTION 1: CONSTANTS
+  // ================================================================
+  const TZ = 'America/Indiana/Indianapolis';
+  const STORAGE_EVENTS_KEY = 'gencon_v1_events';
+  const STORAGE_USER_KEY   = 'gencon_v1_user';
+  const CAL_START_H = 7;   // display from 7 AM
+  const CAL_END_H   = 27;  // display to 3 AM next day (hour 27 = 3 AM)
+  const HOUR_H      = 72;  // px per hour in calendar
+  const MAX_CAL_BROWSE = 150; // max browse events per day column
+
+  const COLUMN_MAP = {
+    'Game ID':                    'id',
+    'Group':                      'group',
+    'Title':                      'title',
+    'Short Description':          'shortDescription',
+    'Long Description':           'description',
+    'Event Type':                 'category',
+    'Game System':                'system',
+    'Rules Edition':              'rulesEdition',
+    'Minimum Players':            'minPlayers',
+    'Maximum Players':            'maxPlayers',
+    'Age Required':               'ageRequirement',
+    'Experience Required':        'experienceRequired',
+    'Materials Required':         '_materialsStr',
+    'Materials Required Details': 'materialsDetails',
+    'Start Date & Time':          '_startStr',
+    'Duration':                   '_durationH',
+    'End Date & Time':            '_endStr',
+    'GM Names':                   'gm',
+    'Website':                    'website',
+    // Email deliberately skipped
+    'Tournament?':                '_tournamentStr',
+    'Round Number':               'roundNumber',
+    'Total Rounds':               'totalRounds',
+    'Minimum Play Time':          '_minPlayH',
+    'Attendee Registration?':     '_regStr',
+    'Cost $':                     'cost',
+    'Location':                   '_venueRaw',
+    'Room Name':                  'room',
+    'Table Number':               'tableNumber',
+    'Special Category':           'specialCategory',
+    'Tickets Available':          'ticketsAvailable',
+    'Last Modified':              '_lastModRaw',
+  };
+
+  // Category color map: prefix -> {bg, border, text}
+  const CAT_COLORS = {
+    RPG: { bg:'#dbeafe', bd:'#3b82f6', tx:'#1e40af' },
+    BGM: { bg:'#ffedd5', bd:'#f97316', tx:'#9a3412' },
+    CGM: { bg:'#fce7f3', bd:'#ec4899', tx:'#9d174d' },
+    TCG: { bg:'#dcfce7', bd:'#22c55e', tx:'#14532d' },
+    NMN: { bg:'#ede9fe', bd:'#8b5cf6', tx:'#4c1d95' },
+    HMN: { bg:'#fef3c7', bd:'#eab308', tx:'#713f12' },
+    SEM: { bg:'#d1fae5', bd:'#10b981', tx:'#065f46' },
+    WKS: { bg:'#fdf4ff', bd:'#a855f7', tx:'#581c87' },
+    ENT: { bg:'#fff7ed', bd:'#fb923c', tx:'#7c2d12' },
+    LRP: { bg:'#f1f5f9', bd:'#94a3b8', tx:'#334155' },
+    EGM: { bg:'#ecfeff', bd:'#06b6d4', tx:'#164e63' },
+    KID: { bg:'#fefce8', bd:'#facc15', tx:'#713f12' },
+    FLM: { bg:'#fdf2f8', bd:'#d946ef', tx:'#701a75' },
+    MHE: { bg:'#f0fdfa', bd:'#14b8a6', tx:'#134e4a' },
+    SPA: { bg:'#fff1f2', bd:'#f43f5e', tx:'#881337' },
+    ESC: { bg:'#f7fee7', bd:'#84cc16', tx:'#365314' },
+    TDA: { bg:'#fff5f5', bd:'#ef4444', tx:'#7f1d1d' },
+    TRD: { bg:'#f8f9fa', bd:'#9ca3af', tx:'#374151' },
+    ZED: { bg:'#f5f3ff', bd:'#7c3aed', tx:'#4c1d95' },
+  };
+  function catColor(category) {
+    const prefix = (category || '').split(/[\s-]/)[0].trim().toUpperCase();
+    return CAT_COLORS[prefix] || { bg:'#f1f5f9', bd:'#94a3b8', tx:'#334155' };
+  }
+  function catLabel(category) {
+    return (category || '').trim() || '?';
+  }
+
+  // ================================================================
+  // SECTION 2: PARSER
+  // ================================================================
+  const Parser = {
+    normalizeVenue(raw) {
+      if (!raw) return '';
+      const s = String(raw).trim();
+      if (!s || s.toLowerCase() === 'none') return '';
+      const lower = s.toLowerCase();
+      const MAP = {
+        hilton: 'Hilton', hyatt: 'Hyatt', icc: 'ICC',
+        jw: 'JW Marriott', marriott: 'Marriott', westin: 'Westin',
+        omni: 'Omni', 'crowne plaza': 'Crowne Plaza',
+        'embassy suites': 'Embassy Suites', 'le meridien': 'Le Méridien',
+        'union station': 'Union Station', stadium: 'Stadium',
+        '416 wabash': '416 Wabash',
+      };
+      for (const [k, v] of Object.entries(MAP)) {
+        if (lower === k || lower.startsWith(k + ' ') || lower.startsWith(k + ':')) return v;
+      }
+      // Title-case fallback
+      return s.replace(/\b\w/g, c => c.toUpperCase());
+    },
+
+    parseDate(str) {
+      if (!str) return null;
+      const s = String(str).trim();
+      const formats = ['MM/dd/yyyy hh:mm a', 'M/d/yyyy hh:mm a', 'MM/dd/yyyy HH:mm', 'M/d/yyyy HH:mm'];
+      for (const fmt of formats) {
+        const dt = DateTime.fromFormat(s, fmt, { zone: TZ });
+        if (dt.isValid) return dt;
+      }
+      console.warn('[Parser] Could not parse date:', s);
+      return null;
+    },
+
+    parseExcelSerial(val) {
+      if (typeof val === 'number' && val > 40000) {
+        return new Date((val - 25569) * 86400000);
+      }
+      if (val instanceof Date) return val;
+      return null;
+    },
+
+    normalizeRow(raw) {
+      const startDt = this.parseDate(raw._startStr);
+      if (!startDt) return null;
+      const id = String(raw.id || '').trim();
+      if (!id) return null;
+
+      const durationH   = parseFloat(raw._durationH) || 0;
+      const durationMin = Math.round(durationH * 60);
+      let endDt         = this.parseDate(raw._endStr);
+      if (!endDt || !endDt.isValid) endDt = startDt.plus({ minutes: durationMin });
+
+      return {
+        id,
+        group:               String(raw.group            || '').trim(),
+        title:               String(raw.title            || '').trim(),
+        shortDescription:    String(raw.shortDescription || '').trim(),
+        description:         String(raw.description      || '').trim(),
+        category:            String(raw.category         || '').trim(),
+        system:              String(raw.system           || '').trim(),
+        rulesEdition:        String(raw.rulesEdition     || '').trim(),
+        minPlayers:          parseInt(raw.minPlayers)    || 0,
+        maxPlayers:          parseInt(raw.maxPlayers)    || 0,
+        ageRequirement:      String(raw.ageRequirement   || '').trim(),
+        experienceRequired:  String(raw.experienceRequired || '').trim(),
+        materialsRequired:   /^yes/i.test(String(raw._materialsStr || '')),
+        materialsDetails:    String(raw.materialsDetails || '').trim(),
+        startMs:             startDt.toMillis(),
+        endMs:               endDt.toMillis(),
+        durationMinutes:     durationMin,
+        minPlayTime:         Math.round((parseFloat(raw._minPlayH) || 0) * 60),
+        gm:                  String(raw.gm      || '').trim(),
+        website:             String(raw.website || '').trim(),
+        isTournament:        /^yes/i.test(String(raw._tournamentStr || '')),
+        roundNumber:         parseInt(raw.roundNumber) || null,
+        totalRounds:         parseInt(raw.totalRounds)  || null,
+        requiresRegistration:/^yes/i.test(String(raw._regStr || '')),
+        cost:                parseFloat(raw.cost) || 0,
+        venue:               this.normalizeVenue(raw._venueRaw),
+        room:                String(raw.room        || '').trim(),
+        tableNumber:         String(raw.tableNumber || '').trim(),
+        specialCategory:     String(raw.specialCategory || '').trim(),
+        ticketsAvailable:    parseInt(raw.ticketsAvailable) || 0,
+        lastModified:        this.parseExcelSerial(raw._lastModRaw),
+      };
+    },
+
+    parseXLSX(arrayBuffer, onProgress) {
+      onProgress && onProgress(10);
+      const wb = XLSX.read(arrayBuffer, { type: 'array', cellText: true, cellDates: false });
+      onProgress && onProgress(30);
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+      onProgress && onProgress(50);
+
+      const events = [];
+      const idMap  = new Map(); // id -> index for dedup
+      let skipped  = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        // Remap columns
+        const mapped = {};
+        for (const [col, field] of Object.entries(COLUMN_MAP)) {
+          mapped[field] = row[col] !== undefined ? row[col] : '';
+        }
+        const event = this.normalizeRow(mapped);
+        if (!event) { skipped++; continue; }
+
+        if (idMap.has(event.id)) {
+          const idx      = idMap.get(event.id);
+          const existing = events[idx];
+          const existTs  = existing.lastModified ? existing.lastModified.getTime() : 0;
+          const newTs    = event.lastModified    ? event.lastModified.getTime()    : 0;
+          if (newTs > existTs) events[idx] = event;
+        } else {
+          idMap.set(event.id, events.length);
+          events.push(event);
+        }
+
+        if (i % 2000 === 0) onProgress && onProgress(50 + Math.round((i / rows.length) * 40));
+      }
+
+      onProgress && onProgress(95);
+      console.log(`[Parser] ${events.length} events parsed, ${skipped} skipped`);
+      return events;
+    },
+  };
+
+  // ================================================================
+  // SECTION 3: STORAGE
+  // ================================================================
+  const Storage = {
+    defaultUser() {
+      return { schedule: [], favorites: [], prefs: { sameVenueBuffer: 5, crossVenueBuffer: 15 }, version: 1 };
+    },
+
+    saveEvents(events) {
+      try {
+        const compressed = LZString.compress(JSON.stringify(events));
+        localStorage.setItem(STORAGE_EVENTS_KEY, compressed);
+        return { ok: true };
+      } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+          // Try minimal fields only
+          const minimal = events.map(ev => ({
+            id: ev.id, title: ev.title, shortDescription: ev.shortDescription,
+            category: ev.category, system: ev.system, startMs: ev.startMs,
+            endMs: ev.endMs, durationMinutes: ev.durationMinutes,
+            venue: ev.venue, room: ev.room, cost: ev.cost,
+            ticketsAvailable: ev.ticketsAvailable, gm: ev.gm,
+            ageRequirement: ev.ageRequirement, isTournament: ev.isTournament,
+            requiresRegistration: ev.requiresRegistration,
+            maxPlayers: ev.maxPlayers, group: ev.group,
+            rulesEdition: ev.rulesEdition, specialCategory: ev.specialCategory,
+          }));
+          try {
+            const c2 = LZString.compress(JSON.stringify(minimal));
+            localStorage.setItem(STORAGE_EVENTS_KEY, c2);
+            return { ok: true, partial: true };
+          } catch (e2) {
+            return { ok: false, error: 'Quota exceeded' };
+          }
+        }
+        return { ok: false, error: e.message };
+      }
+    },
+
+    loadEvents() {
+      try {
+        const raw = localStorage.getItem(STORAGE_EVENTS_KEY);
+        if (!raw) return null;
+        const json = LZString.decompress(raw);
+        return json ? JSON.parse(json) : null;
+      } catch (e) { console.error('[Storage] loadEvents:', e); return null; }
+    },
+
+    saveUser(userData) {
+      try {
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
+        return true;
+      } catch (e) { return false; }
+    },
+
+    loadUser() {
+      try {
+        const raw = localStorage.getItem(STORAGE_USER_KEY);
+        if (!raw) return this.defaultUser();
+        return Object.assign(this.defaultUser(), JSON.parse(raw));
+      } catch (e) { return this.defaultUser(); }
+    },
+
+    clearAll() {
+      localStorage.removeItem(STORAGE_EVENTS_KEY);
+      localStorage.removeItem(STORAGE_USER_KEY);
+    },
+  };
+
+  // ================================================================
+  // SECTION 4: SCHEDULER
+  // ================================================================
+  const Scheduler = {
+    bufferMs(a, b, prefs) {
+      const same = a.venue && b.venue && a.venue === b.venue;
+      return (same ? (prefs.sameVenueBuffer || 5) : (prefs.crossVenueBuffer || 15)) * 60000;
+    },
+
+    conflicts(a, b, prefs) {
+      if (a.id === b.id) return false;
+      const buf = this.bufferMs(a, b, prefs);
+      return a.startMs < b.endMs + buf && a.endMs + buf > b.startMs;
+    },
+
+    getConflicts(event, scheduledList, prefs) {
+      return scheduledList.filter(s => this.conflicts(event, s, prefs));
+    },
+
+    canAdd(event, scheduledList, prefs) {
+      return this.getConflicts(event, scheduledList, prefs).length === 0;
+    },
+
+    findAlternatives(event, allEvents, scheduledList, prefs, limit = 5) {
+      return allEvents
+        .filter(e => e.id !== event.id && this.canAdd(e, scheduledList, prefs))
+        .map(e => ({
+          event: e,
+          score: (e.title === event.title ? 10 : 0) +
+                 (e.gm === event.gm && event.gm ? 5 : 0) +
+                 (e.system === event.system && event.system ? 3 : 0) +
+                 (e.category === event.category ? 2 : 0) +
+                 (e.ticketsAvailable > 0 ? 1 : 0),
+        }))
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map(x => x.event);
+    },
+
+    getFreeWindows(scheduledList, conventionDays, prefs) {
+      const minGap = 30 * 60000; // 30 min
+      const windows = [];
+      for (const day of conventionDays) {
+        const wStart = day.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }).toMillis();
+        const wEnd   = day.set({ hour: 23, minute: 0, second: 0, millisecond: 0 }).toMillis();
+        const dayEvs = scheduledList
+          .filter(e => e.startMs >= wStart && e.startMs < wEnd)
+          .sort((a, b) => a.startMs - b.startMs);
+        let cursor = wStart;
+        for (const ev of dayEvs) {
+          if (ev.startMs - cursor >= minGap) {
+            windows.push({ startMs: cursor, endMs: ev.startMs, durationMin: (ev.startMs - cursor) / 60000 });
+          }
+          cursor = Math.max(cursor, ev.endMs);
+        }
+        if (wEnd - cursor >= minGap) {
+          windows.push({ startMs: cursor, endMs: wEnd, durationMin: (wEnd - cursor) / 60000 });
+        }
+      }
+      return windows;
+    },
+  };
+
+  // ================================================================
+  // SECTION 5: RECOMMENDATIONS
+  // ================================================================
+  const Recs = {
+    score(event, catW, sysW, favSet) {
+      let s = 0;
+      s += (catW[event.category] || 0) * 3;
+      s += (sysW[event.system]   || 0) * 2;
+      if (favSet.has(event.id))          s += 10;
+      if (event.ticketsAvailable > 0)    s += 1;
+      if (event.ticketsAvailable > 5)    s += 1;
+      return s;
+    },
+
+    recommend(state) {
+      const { events, eventMap, schedule, favorites, prefs, conventionDays } = state;
+      const scheduled = [...schedule].map(id => eventMap[id]).filter(Boolean);
+      const favSet    = new Set(favorites);
+      const windows   = Scheduler.getFreeWindows(scheduled, conventionDays, prefs);
+      if (!windows.length) return [];
+
+      // Build interest weights
+      const catW = {}, sysW = {};
+      for (const id of [...schedule, ...favorites]) {
+        const ev = eventMap[id];
+        if (!ev) continue;
+        catW[ev.category] = (catW[ev.category] || 0) + (schedule.has(id) ? 1 : 0.5);
+        sysW[ev.system]   = (sysW[ev.system]   || 0) + (schedule.has(id) ? 1 : 0.5);
+      }
+
+      const result = [];
+      for (const win of windows.slice(0, 5)) {
+        const candidates = events
+          .filter(ev =>
+            !schedule.has(ev.id) &&
+            ev.startMs >= win.startMs &&
+            ev.endMs   <= win.endMs + 5 * 60000 &&
+            Scheduler.canAdd(ev, scheduled, prefs)
+          )
+          .sort((a, b) => this.score(b, catW, sysW, favSet) - this.score(a, catW, sysW, favSet))
+          .slice(0, 3);
+        if (candidates.length) result.push({ win, events: candidates });
+      }
+      return result;
+    },
+  };
+
+  // ================================================================
+  // SECTION 6: EXPORTS
+  // ================================================================
+  const Exports = {
+    download(content, filename, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    },
+
+    toCSV(events) {
+      const H = ['Game ID','Title','Date','Start','End','Duration (min)','Venue','Room','GM','Category','System','Cost','Tickets'];
+      const rows = [...events].sort((a,b) => a.startMs - b.startMs).map(ev => {
+        const s = DateTime.fromMillis(ev.startMs, { zone: TZ });
+        const e = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+        return [
+          ev.id,
+          `"${(ev.title||'').replace(/"/g,'""')}"`,
+          s.toFormat('MM/dd/yyyy'),
+          s.toFormat('hh:mm a'),
+          e.toFormat('hh:mm a'),
+          ev.durationMinutes,
+          `"${ev.venue||''}"`,
+          `"${ev.room||''}"`,
+          `"${(ev.gm||'').replace(/"/g,'""')}"`,
+          ev.category.split(' - ')[0],
+          `"${ev.system||''}"`,
+          ev.cost.toFixed(2),
+          ev.ticketsAvailable,
+        ].join(',');
+      });
+      return [H.join(','), ...rows].join('\r\n');
+    },
+
+    toICS(events) {
+      const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Gen Con Event Planner//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+      const fmt = "yyyyMMdd'T'HHmmss'Z'";
+      for (const ev of events) {
+        const s = DateTime.fromMillis(ev.startMs).setZone('UTC');
+        const e = DateTime.fromMillis(ev.endMs).setZone('UTC');
+        const loc = [ev.venue, ev.room, ev.tableNumber ? 'Table '+ev.tableNumber : ''].filter(Boolean).join(' - ');
+        lines.push(
+          'BEGIN:VEVENT',
+          `DTSTART:${s.toFormat(fmt)}`,
+          `DTEND:${e.toFormat(fmt)}`,
+          `SUMMARY:${ev.title}`,
+          `DESCRIPTION:${(ev.shortDescription||'').replace(/\n/g,'\\n').replace(/,/g,'\\,')}`,
+          `LOCATION:${loc}`,
+          `UID:${ev.id}@gencon-event-planner`,
+          'END:VEVENT'
+        );
+      }
+      lines.push('END:VCALENDAR');
+      return lines.join('\r\n');
+    },
+
+    printSchedule(events) {
+      const sorted   = [...events].sort((a,b) => a.startMs - b.startMs);
+      const byDay    = {};
+      for (const ev of sorted) {
+        const key = DateTime.fromMillis(ev.startMs, { zone: TZ }).toFormat('cccc, MMMM d');
+        (byDay[key] = byDay[key] || []).push(ev);
+      }
+      let html = `<html><head><title>My Gen Con Schedule</title><style>
+        body{font-family:Georgia,serif;max-width:760px;margin:0 auto;padding:24px;color:#1e293b}
+        h1{text-align:center;font-size:22px;margin-bottom:4px}
+        .sub{text-align:center;color:#64748b;font-size:13px;margin-bottom:24px}
+        h2{font-size:15px;font-weight:700;border-bottom:2px solid #1e3a5f;padding-bottom:4px;margin:20px 0 10px;color:#1e3a5f}
+        .ev{margin:8px 0;padding:8px 12px;border-left:4px solid #2563eb;background:#f8fafc}
+        .ev-time{font-weight:700;color:#2563eb;font-size:13px}
+        .ev-title{font-size:15px;font-weight:700;margin:2px 0}
+        .ev-meta{font-size:12px;color:#64748b}
+        @media print{body{padding:0}.ev{break-inside:avoid}}
+      </style></head><body>
+      <h1>My Gen Con Schedule</h1>
+      <p class="sub">Generated ${new Date().toLocaleDateString()}</p>`;
+      for (const [day, evs] of Object.entries(byDay)) {
+        html += `<h2>${day}</h2>`;
+        for (const ev of evs) {
+          const s = DateTime.fromMillis(ev.startMs, { zone: TZ });
+          const e = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+          html += `<div class="ev">
+            <div class="ev-time">${s.toFormat('h:mm a')} – ${e.toFormat('h:mm a')} (${ev.durationMinutes} min)</div>
+            <div class="ev-title">${ev.title}</div>
+            <div class="ev-meta">${[ev.venue, ev.room, ev.gm ? 'GM: '+ev.gm : '', ev.category.split(' - ')[0], ev.cost > 0 ? '$'+ev.cost.toFixed(2) : 'Free', ev.ticketsAvailable > 0 ? ev.ticketsAvailable+' tickets' : 'Sold out'].filter(Boolean).join(' · ')}</div>
+          </div>`;
+        }
+      }
+      html += '</body></html>';
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => w.print(), 400);
+    },
+  };
+
+  // ================================================================
+  // SECTION 7: CALENDAR RENDERER
+  // ================================================================
+  const CalRender = {
+    // Layout overlapping events into columns
+    layoutEvents(events) {
+      const sorted = [...events].sort((a,b) => a.startMs - b.startMs || a.endMs - b.endMs);
+      const cols = []; // cols[i] = endMs of last event in col i
+      const placed = sorted.map(ev => {
+        let col = 0;
+        while (col < cols.length && cols[col] > ev.startMs) col++;
+        cols[col] = ev.endMs;
+        return { ev, col };
+      });
+      // compute span (max col in overlapping group + 1)
+      const result = placed.map(p => {
+        const span = placed
+          .filter(q => q.ev.startMs < p.ev.endMs && q.ev.endMs > p.ev.startMs)
+          .reduce((mx, q) => Math.max(mx, q.col + 1), 1);
+        return { ev: p.ev, col: p.col, span };
+      });
+      return result;
+    },
+
+    // Convert hour offset to px
+    hToPx(h) { return (h - CAL_START_H) * HOUR_H; },
+    msToPx(ms) {
+      const dt = DateTime.fromMillis(ms, { zone: TZ });
+      const h  = dt.hour + dt.minute / 60;
+      // handle overnight: if < CAL_START_H treat as next day
+      const display = h < CAL_START_H ? h + 24 : h;
+      return this.hToPx(display);
+    },
+    msToDurPx(startMs, endMs) {
+      const s = DateTime.fromMillis(startMs, { zone: TZ });
+      const sh = s.hour + s.minute / 60;
+      const sd = sh < CAL_START_H ? sh + 24 : sh;
+      const durH = (endMs - startMs) / 3_600_000;
+      return Math.max(durH * HOUR_H, 20); // min 20px
+    },
+
+    buildEventBlock(ev, isScheduled, isFav, hasConflict, col, span, containerWidth) {
+      const top    = this.msToPx(ev.startMs);
+      const height = this.msToDurPx(ev.startMs, ev.endMs);
+      const w      = containerWidth ? (containerWidth / span) - 2 : `${100 / span}%`;
+      const left   = containerWidth ? (containerWidth / span) * col + 1 : `${(100 / span) * col}%`;
+
+      const c  = catColor(ev.category);
+      const dt = DateTime.fromMillis(ev.startMs, { zone: TZ });
+      const et = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+
+      const div = document.createElement('div');
+      div.className = 'cal-event ' + (isScheduled ? 'scheduled' : 'browse') + (hasConflict ? ' conflict' : '');
+      div.dataset.id = ev.id;
+      div.style.cssText = `
+        top:${top}px; height:${Math.max(height,20)}px;
+        left:${typeof left === 'number' ? left+'px' : left};
+        width:${typeof w === 'number' ? w+'px' : w};
+        background:${c.bg}; border-left-color:${c.bd}; color:${c.tx};
+      `;
+      div.title = `${ev.title}\n${dt.toFormat('h:mm a')} – ${et.toFormat('h:mm a')}\n${ev.venue}`;
+
+      const showVenue = height > 34;
+      div.innerHTML = `<div class="ev-title">${ev.title}</div>` +
+        (height > 22 ? `<div class="ev-time">${dt.toFormat('h:mm a')}</div>` : '') +
+        (showVenue && ev.venue ? `<div class="ev-venue">${ev.venue}</div>` : '') +
+        (isFav ? '<span style="position:absolute;top:2px;right:3px;font-size:10px;">★</span>' : '');
+      return div;
+    },
+
+    buildTimeGutter() {
+      const frag = document.createDocumentFragment();
+      for (let h = CAL_START_H; h < CAL_END_H; h++) {
+        const label = document.createElement('div');
+        label.className = 'cal-time-label';
+        const displayH = h >= 24 ? h - 24 : h;
+        const suffix   = displayH < 12 ? 'am' : 'pm';
+        const h12      = displayH === 0 ? 12 : displayH > 12 ? displayH - 12 : displayH;
+        label.textContent = h === CAL_START_H ? '' : `${h12} ${suffix}`;
+        frag.appendChild(label);
+      }
+      return frag;
+    },
+
+    buildHourLines(dayInner) {
+      const totalH = CAL_END_H - CAL_START_H;
+      for (let i = 0; i < totalH; i++) {
+        const line = document.createElement('div');
+        line.className = 'cal-hour-line';
+        dayInner.appendChild(line);
+        // half-hour dashed line
+        const half = document.createElement('div');
+        half.className = 'cal-half-line';
+        half.style.top = (i * HOUR_H + HOUR_H / 2) + 'px';
+        dayInner.appendChild(half);
+      }
+    },
+
+    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, onEventClick, onDrop) {
+      const col = document.createElement('div');
+      col.className = 'cal-day-col';
+      col.dataset.date = dayDt.toISODate();
+
+      const inner = document.createElement('div');
+      inner.className = 'cal-day-col-inner';
+      inner.style.height = ((CAL_END_H - CAL_START_H) * HOUR_H) + 'px';
+      col.appendChild(inner);
+
+      this.buildHourLines(inner);
+
+      // Drop indicator
+      const dropInd = document.createElement('div');
+      dropInd.className = 'cal-drop-indicator';
+      inner.appendChild(dropInd);
+
+      // Drag-over handlers
+      col.addEventListener('dragover', e => {
+        e.preventDefault();
+        const rect = inner.getBoundingClientRect();
+        const y    = e.clientY - rect.top;
+        dropInd.style.top  = y + 'px';
+        dropInd.classList.add('visible');
+      });
+      col.addEventListener('dragleave', () => dropInd.classList.remove('visible'));
+      col.addEventListener('drop', e => {
+        e.preventDefault();
+        dropInd.classList.remove('visible');
+        const id    = e.dataTransfer.getData('text/plain');
+        const rect  = inner.getBoundingClientRect();
+        const y     = e.clientY - rect.top;
+        const hOff  = y / HOUR_H + CAL_START_H;
+        const hInt  = Math.floor(hOff);
+        const mInt  = Math.round((hOff % 1) * 60 / 15) * 15;
+        const newStart = dayDt.set({ hour: hInt >= 24 ? hInt - 24 : hInt, minute: mInt, second: 0 });
+        onDrop && onDrop(id, newStart.toMillis());
+      });
+
+      // Separate scheduled vs browse events
+      const scheduled = allEventsForDay.filter(ev => scheduledSet.has(ev.id));
+      const browse    = allEventsForDay.filter(ev => !scheduledSet.has(ev.id));
+      const shown     = browse.slice(0, MAX_CAL_BROWSE);
+      const overflow  = browse.length - shown.length;
+
+      const toLayout  = [...scheduled, ...shown];
+      const laid      = this.layoutEvents(toLayout);
+
+      const fragment  = document.createDocumentFragment();
+      for (const { ev, col: c, span } of laid) {
+        const isScheduled = scheduledSet.has(ev.id);
+        const isFav       = favSet.has(ev.id);
+        const hasConflict = isScheduled && conflictSet.has(ev.id);
+        const block       = this.buildEventBlock(ev, isScheduled, isFav, hasConflict, c, span, null);
+        block.draggable   = isScheduled;
+        block.addEventListener('dragstart', e => {
+          e.dataTransfer.setData('text/plain', ev.id);
+          block.classList.add('dragging');
+        });
+        block.addEventListener('dragend', () => block.classList.remove('dragging'));
+        block.addEventListener('click', e => { e.stopPropagation(); onEventClick(ev.id); });
+        fragment.appendChild(block);
+      }
+      inner.appendChild(fragment);
+
+      if (overflow > 0) {
+        const badge = document.createElement('div');
+        badge.className = 'cal-overflow-badge';
+        badge.textContent = `+${overflow} more events — refine filters to see all`;
+        col.appendChild(badge);
+      }
+
+      return col;
+    },
+  };
+
+  // ================================================================
+  // SECTION 8: APP STATE & CONTROLLER
+  // ================================================================
+  const App = {
+    state: {
+      events:         [],
+      eventMap:       {},
+      conventionDays: [],
+      schedule:       new Set(),
+      favorites:      new Set(),
+      prefs:          { sameVenueBuffer: 5, crossVenueBuffer: 15 },
+      view:           'convention',
+      currentDayIdx:  0,
+      filters:        {
+        search:       '',
+        categories:   new Set(),
+        days:         new Set(),
+        venues:       new Set(),
+        systems:      new Set(),
+        timeFrom:     '',
+        timeTo:       '',
+        durMin:       '',
+        durMax:       '',
+        costMin:      '',
+        costMax:      '',
+        availableOnly:false,
+        favoritesOnly:false,
+        scheduledOnly:false,
+      },
+      filteredEvents: [],
+      selectedId:     null,
+      undoStack:      [],
+      renderPending:  false,
+    },
+
+    // ---------- Bootstrap ----------
+    init() {
+      this.bindImport();
+      this.bindHeader();
+      this.bindFilters();
+      this.bindKeyboard();
+
+      // Try loading persisted events
+      const saved = Storage.loadEvents();
+      if (saved && saved.length > 0) {
+        const user = Storage.loadUser();
+        this.loadData(saved, user);
+      }
+    },
+
+    loadData(events, userData) {
+      const st = this.state;
+      st.events   = events;
+      st.eventMap = Object.fromEntries(events.map(e => [e.id, e]));
+
+      // Derive convention days
+      const daySet = new Set();
+      for (const ev of events) {
+        daySet.add(DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate());
+      }
+      st.conventionDays = [...daySet].sort()
+        .map(d => DateTime.fromISO(d, { zone: TZ }));
+
+      // Load user data
+      if (userData) {
+        st.schedule  = new Set(userData.schedule  || []);
+        st.favorites = new Set(userData.favorites || []);
+        Object.assign(st.prefs, userData.prefs || {});
+      }
+
+      this.buildFilterControls();
+      this.applyFilters();
+      this.showApp();
+    },
+
+    showApp() {
+      document.getElementById('import-overlay').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+      this.render();
+    },
+
+    // ---------- Import ----------
+    bindImport() {
+      const overlay  = document.getElementById('import-overlay');
+      const dropZone = document.getElementById('drop-zone');
+      const fileIn   = document.getElementById('file-input');
+      const reimport = document.getElementById('reimport-btn');
+
+      dropZone.addEventListener('click', () => fileIn.click());
+      fileIn.addEventListener('change', e => {
+        if (e.target.files[0]) this.handleFile(e.target.files[0]);
+      });
+
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) this.handleFile(file);
+      });
+
+      reimport && reimport.addEventListener('click', () => {
+        document.getElementById('app').classList.add('hidden');
+        document.getElementById('import-overlay').classList.remove('hidden');
+        fileIn.value = '';
+      });
+    },
+
+    handleFile(file) {
+      if (!file.name.endsWith('.xlsx')) {
+        this.setImportStatus('Please select a .xlsx file', 'error');
+        return;
+      }
+      this.setImportStatus('Reading file…', 'info', 10);
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const events = Parser.parseXLSX(e.target.result, pct => {
+            this.setImportStatus(`Parsing events… ${pct}%`, 'info', pct);
+          });
+          if (!events.length) {
+            this.setImportStatus('No events found. Check the file format.', 'error');
+            return;
+          }
+          this.setImportStatus(`Loaded ${events.length.toLocaleString()} events. Saving…`, 'info', 97);
+
+          const saveResult = Storage.saveEvents(events);
+          const userData   = Storage.loadUser();
+          Storage.saveUser(userData);
+
+          if (!saveResult.ok) {
+            this.showToast('Storage full — events loaded for this session only', 'warning');
+          } else if (saveResult.partial) {
+            this.showToast('Stored with minimal fields due to storage limits', 'warning');
+          }
+
+          this.setImportStatus(`Ready! ${events.length.toLocaleString()} events loaded.`, 'info', 100);
+          setTimeout(() => this.loadData(events, userData), 300);
+        } catch (err) {
+          console.error(err);
+          this.setImportStatus('Error parsing file: ' + err.message, 'error');
+        }
+      };
+      reader.onerror = () => this.setImportStatus('Could not read file', 'error');
+      reader.readAsArrayBuffer(file);
+    },
+
+    setImportStatus(msg, type, pct) {
+      const el  = document.getElementById('import-status');
+      const txt = document.getElementById('import-status-text');
+      const bar = document.getElementById('import-progress-bar');
+      el.className = type || 'info';
+      txt.textContent = msg;
+      if (pct !== undefined && bar) bar.style.width = pct + '%';
+    },
+
+    // ---------- Header controls ----------
+    bindHeader() {
+      document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          this.state.view = btn.dataset.view;
+          this.updateDayNav();
+          this.render();
+        });
+      });
+
+      document.getElementById('day-prev').addEventListener('click', () => {
+        if (this.state.currentDayIdx > 0) {
+          this.state.currentDayIdx--;
+          this.updateDayNav();
+          this.render();
+        }
+      });
+      document.getElementById('day-next').addEventListener('click', () => {
+        if (this.state.currentDayIdx < this.state.conventionDays.length - 1) {
+          this.state.currentDayIdx++;
+          this.updateDayNav();
+          this.render();
+        }
+      });
+
+      document.getElementById('undo-btn').addEventListener('click', () => this.undo());
+      document.getElementById('settings-btn').addEventListener('click', () => this.openSettings());
+      document.getElementById('settings-cancel').addEventListener('click', () => this.closeSettings());
+      document.getElementById('settings-save').addEventListener('click', () => this.saveSettings());
+    },
+
+    updateDayNav() {
+      const nav   = document.getElementById('day-nav');
+      const label = document.getElementById('day-nav-label');
+      const show  = this.state.view === 'day';
+      nav.classList.toggle('visible', show);
+      if (show && this.state.conventionDays.length) {
+        const day = this.state.conventionDays[this.state.currentDayIdx];
+        label.textContent = day.toFormat('ccc, MMM d');
+      }
+    },
+
+    // ---------- Filter controls ----------
+    buildFilterControls() {
+      const st = this.state;
+
+      // --- Days ---
+      const daysEl = document.getElementById('filter-days');
+      daysEl.innerHTML = '';
+      for (const day of st.conventionDays) {
+        const iso   = day.toISODate();
+        const count = st.events.filter(e => DateTime.fromMillis(e.startMs, { zone: TZ }).toISODate() === iso).length;
+        const label = document.createElement('label');
+        label.className = 'filter-check-item';
+        label.innerHTML = `<input type="checkbox" data-day="${iso}">
+          <span class="filter-check-label">${day.toFormat('ccc, MMM d')}</span>
+          <span class="filter-check-count">${count.toLocaleString()}</span>`;
+        label.querySelector('input').addEventListener('change', () => this.onFilterChange());
+        daysEl.appendChild(label);
+      }
+
+      // --- Categories ---
+      const catEl = document.getElementById('filter-categories');
+      catEl.innerHTML = '';
+      const catMap = {};
+      for (const ev of st.events) {
+        catMap[ev.category] = (catMap[ev.category] || 0) + 1;
+      }
+      const cats = Object.entries(catMap).sort((a,b) => b[1] - a[1]);
+      for (const [cat, count] of cats) {
+        const c     = catColor(cat);
+        const label = document.createElement('label');
+        label.className = 'filter-check-item';
+        label.innerHTML = `<input type="checkbox" data-cat="${cat}">
+          <span class="filter-check-label" style="color:${c.tx}">${catLabel(cat)}</span>
+          <span class="filter-check-count">${count.toLocaleString()}</span>`;
+        label.querySelector('input').addEventListener('change', () => this.onFilterChange());
+        catEl.appendChild(label);
+      }
+
+      // --- Systems (rebuilt dynamically with counts; see rebuildSystemOptions) ---
+      // Initial build deferred to rebuildSystemOptions() called from applyFilters()
+
+      // --- Venues ---
+      const venEl  = document.getElementById('filter-venue');
+      const venues = [...new Set(st.events.map(e => e.venue).filter(Boolean))].sort();
+      venEl.innerHTML = '<option value="">All venues</option>';
+      for (const v of venues) venEl.insertAdjacentHTML('beforeend', `<option value="${v}">${v}</option>`);
+
+      // --- Cost ---
+      const costs = [...new Set(st.events.map(e => e.cost))].sort((a,b) => a-b);
+      const costMin = document.getElementById('filter-cost-min');
+      const costMax = document.getElementById('filter-cost-max');
+      costMin.innerHTML = '<option value="">Any</option>';
+      costMax.innerHTML = '<option value="">Any</option>';
+      for (const c of costs) {
+        const opt = `<option value="${c}">$${c.toFixed(0)}</option>`;
+        costMin.insertAdjacentHTML('beforeend', opt);
+        costMax.insertAdjacentHTML('beforeend', opt);
+      }
+
+      // --- Time ---
+      const fromEl = document.getElementById('filter-time-from');
+      const toEl   = document.getElementById('filter-time-to');
+      fromEl.innerHTML = '<option value="">Any</option>';
+      toEl.innerHTML   = '<option value="">Any</option>';
+      for (let h = 6; h < 24; h++) {
+        const label = DateTime.now().set({ hour: h, minute: 0 }).toFormat('h a');
+        fromEl.insertAdjacentHTML('beforeend', `<option value="${h}">${label}</option>`);
+        toEl.insertAdjacentHTML('beforeend',   `<option value="${h}">${label}</option>`);
+      }
+    },
+
+    bindFilters() {
+      const defer = () => {
+        clearTimeout(this._filterTimer);
+        this._filterTimer = setTimeout(() => this.onFilterChange(), 250);
+      };
+
+      document.getElementById('search-input').addEventListener('input', defer);
+      document.getElementById('filter-available').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-favorites').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-scheduled').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-system').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-venue').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-time-from').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-time-to').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-dur-min').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-dur-max').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-cost-min').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-cost-max').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('clear-filters-btn').addEventListener('click', () => this.clearFilters());
+    },
+
+    onFilterChange() {
+      const st = this.state;
+      // Read filter state from DOM
+      st.filters.search        = document.getElementById('search-input').value.trim().toLowerCase();
+      st.filters.availableOnly = document.getElementById('filter-available').checked;
+      st.filters.favoritesOnly = document.getElementById('filter-favorites').checked;
+      st.filters.scheduledOnly = document.getElementById('filter-scheduled').checked;
+      st.filters.timeFrom      = document.getElementById('filter-time-from').value;
+      st.filters.timeTo        = document.getElementById('filter-time-to').value;
+      st.filters.durMin        = document.getElementById('filter-dur-min').value;
+      st.filters.durMax        = document.getElementById('filter-dur-max').value;
+      st.filters.costMin       = document.getElementById('filter-cost-min').value;
+      st.filters.costMax       = document.getElementById('filter-cost-max').value;
+
+      const selSystem = document.getElementById('filter-system').value;
+      st.filters.systems = selSystem ? new Set([selSystem]) : new Set();
+
+      const selVenue = document.getElementById('filter-venue').value;
+      st.filters.venues = selVenue ? new Set([selVenue]) : new Set();
+
+      st.filters.days = new Set(
+        [...document.querySelectorAll('#filter-days input:checked')].map(i => i.dataset.day)
+      );
+      st.filters.categories = new Set(
+        [...document.querySelectorAll('#filter-categories input:checked')].map(i => i.dataset.cat)
+      );
+
+      this.applyFilters();
+      this.scheduleRender();
+    },
+
+    applyFilters() {
+      const st = this.state;
+      const f  = st.filters;
+      const q  = f.search;
+
+      st.filteredEvents = st.events.filter(ev => {
+        if (q) {
+          const match = ev.title.toLowerCase().includes(q) ||
+                        ev.shortDescription.toLowerCase().includes(q) ||
+                        ev.gm.toLowerCase().includes(q) ||
+                        ev.system.toLowerCase().includes(q) ||
+                        ev.id.toLowerCase().includes(q);
+          if (!match) return false;
+        }
+        if (f.categories.size > 0 && !f.categories.has(ev.category)) return false;
+        if (f.systems.size > 0 && !f.systems.has(ev.system)) return false;
+        if (f.days.size > 0) {
+          const d = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
+          if (!f.days.has(d)) return false;
+        }
+        if (f.venues.size > 0 && !f.venues.has(ev.venue)) return false;
+        if (f.timeFrom) {
+          const h = DateTime.fromMillis(ev.startMs, { zone: TZ }).hour;
+          if (h < parseInt(f.timeFrom)) return false;
+        }
+        if (f.timeTo) {
+          const h = DateTime.fromMillis(ev.startMs, { zone: TZ }).hour;
+          if (h > parseInt(f.timeTo)) return false;
+        }
+        if (f.durMin && ev.durationMinutes < parseInt(f.durMin)) return false;
+        if (f.durMax && ev.durationMinutes > parseInt(f.durMax)) return false;
+        if (f.costMin && ev.cost < parseFloat(f.costMin)) return false;
+        if (f.costMax && ev.cost > parseFloat(f.costMax)) return false;
+        if (f.availableOnly && ev.ticketsAvailable <= 0) return false;
+        if (f.favoritesOnly && !st.favorites.has(ev.id)) return false;
+        if (f.scheduledOnly && !st.schedule.has(ev.id)) return false;
+        return true;
+      });
+
+      const countEl = document.getElementById('filter-count');
+      if (countEl) {
+        countEl.textContent = `Showing ${st.filteredEvents.length.toLocaleString()} of ${st.events.length.toLocaleString()} events`;
+      }
+
+      this.rebuildSystemOptions();
+    },
+
+    // Rebuild the Game System dropdown showing counts from filteredEvents,
+    // excluding any active system filter so all relevant options stay visible.
+    rebuildSystemOptions() {
+      const st      = this.state;
+      const f       = st.filters;
+      const sysEl   = document.getElementById('filter-system');
+      if (!sysEl) return;
+
+      // Count systems from events matching all filters EXCEPT the system filter.
+      const sysMap = {};
+      for (const ev of st.events) {
+        if (!ev.system) continue;
+        // Apply all active filters except system
+        const pass =
+          (!f.search || ev.title.toLowerCase().includes(f.search) ||
+            ev.shortDescription.toLowerCase().includes(f.search) ||
+            ev.gm.toLowerCase().includes(f.search) ||
+            ev.system.toLowerCase().includes(f.search) ||
+            ev.id.toLowerCase().includes(f.search)) &&
+          (f.categories.size === 0 || f.categories.has(ev.category)) &&
+          (f.days.size === 0 || f.days.has(DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate())) &&
+          (f.venues.size   === 0 || f.venues.has(ev.venue)) &&
+          (!f.timeFrom || DateTime.fromMillis(ev.startMs, { zone: TZ }).hour >= parseInt(f.timeFrom)) &&
+          (!f.timeTo   || DateTime.fromMillis(ev.startMs, { zone: TZ }).hour <= parseInt(f.timeTo)) &&
+          (!f.durMin   || ev.durationMinutes >= parseInt(f.durMin)) &&
+          (!f.durMax   || ev.durationMinutes <= parseInt(f.durMax)) &&
+          (!f.costMin  || ev.cost >= parseFloat(f.costMin)) &&
+          (!f.costMax  || ev.cost <= parseFloat(f.costMax)) &&
+          (!f.availableOnly || ev.ticketsAvailable > 0) &&
+          (!f.favoritesOnly || st.favorites.has(ev.id)) &&
+          (!f.scheduledOnly || st.schedule.has(ev.id));
+        if (pass) sysMap[ev.system] = (sysMap[ev.system] || 0) + 1;
+      }
+
+      const currentVal = sysEl.value;
+      sysEl.innerHTML  = '<option value="">All systems</option>';
+      const sorted = Object.entries(sysMap)
+        .filter(([, n]) => n > 0)
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [sys, n] of sorted) {
+        const opt = document.createElement('option');
+        opt.value       = sys;
+        opt.textContent = `${sys} (${n.toLocaleString()})`;
+        if (sys === currentVal) opt.selected = true;
+        sysEl.appendChild(opt);
+      }
+      // If the previously-selected system is no longer in the list, clear it.
+      if (currentVal && !sysMap[currentVal]) {
+        sysEl.value = '';
+        st.filters.systems = new Set();
+      }
+    },
+
+    clearFilters() {
+      document.getElementById('search-input').value = '';
+      document.getElementById('filter-available').checked = false;
+      document.getElementById('filter-favorites').checked = false;
+      document.getElementById('filter-scheduled').checked = false;
+      document.getElementById('filter-system').value = '';
+      document.getElementById('filter-venue').value = '';
+      document.getElementById('filter-time-from').value = '';
+      document.getElementById('filter-time-to').value   = '';
+      document.getElementById('filter-dur-min').value   = '';
+      document.getElementById('filter-dur-max').value   = '';
+      document.getElementById('filter-cost-min').value  = '';
+      document.getElementById('filter-cost-max').value  = '';
+      document.querySelectorAll('#filter-days input, #filter-categories input')
+        .forEach(cb => cb.checked = false);
+      this.onFilterChange();
+    },
+
+    // ---------- Schedule mutations ----------
+    pushUndo() {
+      const st = this.state;
+      st.undoStack.push({ schedule: new Set(st.schedule), favorites: new Set(st.favorites) });
+      if (st.undoStack.length > 20) st.undoStack.shift();
+      document.getElementById('undo-btn').disabled = false;
+    },
+
+    undo() {
+      const st = this.state;
+      if (!st.undoStack.length) return;
+      const prev = st.undoStack.pop();
+      st.schedule  = prev.schedule;
+      st.favorites = prev.favorites;
+      if (!st.undoStack.length) document.getElementById('undo-btn').disabled = true;
+      this.persistUser();
+      this.scheduleRender();
+      this.showToast('Undone');
+    },
+
+    addToSchedule(id) {
+      const st  = this.state;
+      const ev  = st.eventMap[id];
+      if (!ev) return;
+      const scheduled = [...st.schedule].map(i => st.eventMap[i]).filter(Boolean);
+      const conflicts = Scheduler.getConflicts(ev, scheduled, st.prefs);
+      if (conflicts.length > 0) {
+        this.showToast(`Conflict with ${conflicts.length} event(s)`, 'warning');
+        // Still allow adding (user can resolve)
+      }
+      this.pushUndo();
+      st.schedule.add(id);
+      this.persistUser();
+      this.scheduleRender();
+      this.renderRightPanel();
+      this.showToast('Added to schedule');
+    },
+
+    removeFromSchedule(id) {
+      const st = this.state;
+      this.pushUndo();
+      st.schedule.delete(id);
+      this.persistUser();
+      this.scheduleRender();
+      this.renderRightPanel();
+      this.showToast('Removed from schedule');
+    },
+
+    rescheduleEvent(id, newStartMs) {
+      const st = this.state;
+      const ev = st.eventMap[id];
+      if (!ev || !st.schedule.has(id)) return;
+      const durMs   = ev.endMs - ev.startMs;
+      this.pushUndo();
+      ev.startMs = newStartMs;
+      ev.endMs   = newStartMs + durMs;
+      this.persistUser();
+      this.scheduleRender();
+      this.showToast('Event rescheduled');
+    },
+
+    toggleFavorite(id) {
+      const st = this.state;
+      this.pushUndo();
+      if (st.favorites.has(id)) st.favorites.delete(id);
+      else                       st.favorites.add(id);
+      this.persistUser();
+      this.scheduleRender();
+    },
+
+    selectEvent(id) {
+      this.state.selectedId = id;
+      this.renderRightPanel();
+    },
+
+    persistUser() {
+      const st = this.state;
+      Storage.saveUser({
+        schedule:  [...st.schedule],
+        favorites: [...st.favorites],
+        prefs:     st.prefs,
+        version:   1,
+      });
+    },
+
+    // ---------- Conflict map ----------
+    buildConflictSet() {
+      const st        = this.state;
+      const scheduled = [...st.schedule].map(id => st.eventMap[id]).filter(Boolean);
+      const conflictSet = new Set();
+      for (const ev of scheduled) {
+        const others = scheduled.filter(s => s.id !== ev.id);
+        if (Scheduler.getConflicts(ev, others, st.prefs).length > 0) conflictSet.add(ev.id);
+      }
+      return conflictSet;
+    },
+
+    // ---------- Render orchestrator ----------
+    scheduleRender() {
+      if (!this.state.renderPending) {
+        this.state.renderPending = true;
+        requestAnimationFrame(() => {
+          this.state.renderPending = false;
+          this.render();
+        });
+      }
+    },
+
+    render() {
+      this.renderScheduleMeta();
+      const st = this.state;
+      if (st.view === 'agenda')      this.renderAgenda();
+      else if (st.view === 'day')    this.renderDayView();
+      else                           this.renderConventionView();
+      this.renderRightPanel();
+    },
+
+    renderScheduleMeta() {
+      const st       = this.state;
+      const evs      = [...st.schedule].map(id => st.eventMap[id]).filter(Boolean);
+      const hours    = (evs.reduce((s,e) => s + e.durationMinutes, 0) / 60).toFixed(1);
+      const cost     = evs.reduce((s,e) => s + e.cost, 0).toFixed(2);
+      const conflicts = this.buildConflictSet().size;
+      const meta     = document.getElementById('schedule-meta');
+      if (meta) {
+        meta.textContent = `${evs.length} events · ${hours} hrs · $${cost}` +
+          (conflicts > 0 ? ` · ⚠ ${conflicts} conflicts` : '');
+        meta.style.color = conflicts > 0 ? 'var(--color-danger)' : '';
+      }
+    },
+
+    // ---------- Convention view ----------
+    renderConventionView() {
+      const st        = this.state;
+      const panel     = document.getElementById('calendar-panel');
+      const conflictSet = this.buildConflictSet();
+
+      const container = document.createElement('div');
+      container.className = 'cal-container';
+
+      // Sticky column headers
+      const headerRow = document.createElement('div');
+      headerRow.className = 'cal-header-row';
+      const gutterH = document.createElement('div');
+      gutterH.className = 'cal-gutter-header';
+      headerRow.appendChild(gutterH);
+      const dayHeadersWrap = document.createElement('div');
+      dayHeadersWrap.className = 'cal-day-headers';
+      for (const day of st.conventionDays) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-day-header-cell';
+        cell.innerHTML = `<div class="day-name">${day.toFormat('cccc')}</div><div class="day-date">${day.toFormat('MMM d')}</div>`;
+        cell.addEventListener('click', () => {
+          st.view = 'day';
+          st.currentDayIdx = st.conventionDays.indexOf(day);
+          document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === 'day'));
+          this.updateDayNav();
+          this.render();
+        });
+        dayHeadersWrap.appendChild(cell);
+      }
+      headerRow.appendChild(dayHeadersWrap);
+      container.appendChild(headerRow);
+
+      // Scrollable area
+      const scrollArea = document.createElement('div');
+      scrollArea.className = 'cal-scroll-area';
+      const inner = document.createElement('div');
+      inner.className = 'cal-scroll-inner';
+
+      // Time gutter
+      const gutter = document.createElement('div');
+      gutter.className = 'cal-time-gutter';
+      gutter.appendChild(CalRender.buildTimeGutter());
+      inner.appendChild(gutter);
+
+      // Day columns
+      const colsWrap = document.createElement('div');
+      colsWrap.className = 'cal-day-columns';
+
+      for (const day of st.conventionDays) {
+        const iso       = day.toISODate();
+        const dayEvents = st.filteredEvents.filter(ev => {
+          const evDay = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
+          if (evDay === iso) return true;
+          // Overnight continuation: started yesterday, ends today
+          const endDay = DateTime.fromMillis(ev.endMs, { zone: TZ }).toISODate();
+          return endDay === iso && evDay !== iso;
+        });
+        const col = CalRender.renderDayColumn(
+          day, dayEvents, st.schedule, st.favorites, conflictSet,
+          id => this.selectEvent(id),
+          (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
+        );
+        colsWrap.appendChild(col);
+      }
+
+      inner.appendChild(colsWrap);
+      scrollArea.appendChild(inner);
+      container.appendChild(scrollArea);
+
+      panel.innerHTML = '';
+      panel.appendChild(container);
+
+      // Sync scroll between header and body
+      scrollArea.addEventListener('scroll', () => {
+        dayHeadersWrap.scrollLeft = scrollArea.scrollLeft;
+      });
+    },
+
+    // ---------- Day view ----------
+    renderDayView() {
+      const st          = this.state;
+      const panel       = document.getElementById('calendar-panel');
+      const conflictSet = this.buildConflictSet();
+      const day         = st.conventionDays[st.currentDayIdx];
+      if (!day) { panel.innerHTML = '<div class="cal-empty"><div class="cal-empty-icon">📅</div><div>No days loaded</div></div>'; return; }
+
+      const iso       = day.toISODate();
+      const dayEvents = st.filteredEvents.filter(ev => {
+        return DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate() === iso;
+      });
+
+      const container = document.createElement('div');
+      container.className = 'cal-container';
+
+      // Header
+      const headerRow = document.createElement('div');
+      headerRow.className = 'cal-header-row';
+      const gutterH = document.createElement('div');
+      gutterH.className = 'cal-gutter-header';
+      headerRow.appendChild(gutterH);
+      const dayH = document.createElement('div');
+      dayH.className = 'cal-day-headers';
+      const cell = document.createElement('div');
+      cell.className = 'cal-day-header-cell';
+      cell.style.flex = '1';
+      cell.innerHTML = `<div class="day-name">${day.toFormat('cccc')}</div><div class="day-date">${day.toFormat('MMMM d, yyyy')}</div>`;
+      dayH.appendChild(cell);
+      headerRow.appendChild(dayH);
+      container.appendChild(headerRow);
+
+      const scrollArea = document.createElement('div');
+      scrollArea.className = 'cal-scroll-area';
+      const inner = document.createElement('div');
+      inner.className = 'cal-scroll-inner';
+
+      const gutter = document.createElement('div');
+      gutter.className = 'cal-time-gutter';
+      gutter.appendChild(CalRender.buildTimeGutter());
+      inner.appendChild(gutter);
+
+      const colsWrap = document.createElement('div');
+      colsWrap.className = 'cal-day-columns';
+      const col = CalRender.renderDayColumn(
+        day, dayEvents, st.schedule, st.favorites, conflictSet,
+        id => this.selectEvent(id),
+        (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
+      );
+      col.style.flex = '1';
+      colsWrap.appendChild(col);
+      inner.appendChild(colsWrap);
+      scrollArea.appendChild(inner);
+      container.appendChild(scrollArea);
+      panel.innerHTML = '';
+      panel.appendChild(container);
+
+      // Scroll to 8 AM
+      setTimeout(() => { scrollArea.scrollTop = (8 - CAL_START_H) * HOUR_H; }, 0);
+    },
+
+    // ---------- Agenda view ----------
+    renderAgenda() {
+      const st          = this.state;
+      const panel       = document.getElementById('calendar-panel');
+      const conflictSet = this.buildConflictSet();
+      const PAGE        = 200;
+
+      if (!st.filteredEvents.length) {
+        panel.innerHTML = '<div class="cal-empty"><div class="cal-empty-icon">🔍</div><div>No events match your filters</div></div>';
+        return;
+      }
+
+      const sorted = [...st.filteredEvents].sort((a,b) => a.startMs - b.startMs);
+      const byDay  = {};
+      for (const ev of sorted) {
+        const key = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
+        (byDay[key] = byDay[key] || []).push(ev);
+      }
+
+      // Pagination state
+      st._agendaPage = st._agendaPage || 1;
+      let shown = 0;
+      const maxShown = st._agendaPage * PAGE;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'agenda-container';
+
+      for (const [iso, evs] of Object.entries(byDay)) {
+        if (shown >= maxShown) break;
+        const day    = DateTime.fromISO(iso, { zone: TZ });
+        const group  = document.createElement('div');
+        group.className = 'agenda-day-group';
+
+        const dayCount  = evs.filter(e => st.schedule.has(e.id)).length;
+        group.innerHTML = `<div class="agenda-day-header">
+          <span>${day.toFormat('cccc, MMMM d, yyyy')}</span>
+          ${dayCount > 0 ? `<span class="day-badge">${dayCount} scheduled</span>` : ''}
+        </div>`;
+
+        for (const ev of evs) {
+          if (shown >= maxShown) break;
+          shown++;
+          const isScheduled = st.schedule.has(ev.id);
+          const isFav       = st.favorites.has(ev.id);
+          const hasConflict = isScheduled && conflictSet.has(ev.id);
+          const c           = catColor(ev.category);
+          const sTime       = DateTime.fromMillis(ev.startMs, { zone: TZ });
+          const eTime       = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+
+          const item = document.createElement('div');
+          item.className = 'agenda-event' +
+            (isScheduled ? ' scheduled-event' : '') +
+            (hasConflict ? ' conflict-event'  : '') +
+            (st.selectedId === ev.id ? ' selected' : '');
+          item.dataset.id = ev.id;
+
+          item.innerHTML = `
+            <div class="agenda-event-cat" style="background:${c.bg};color:${c.tx}">${catLabel(ev.category)}</div>
+            <div class="agenda-event-body">
+              <div class="agenda-event-title">${ev.title}</div>
+              <div class="agenda-event-meta">
+                ${sTime.toFormat('h:mm a')} – ${eTime.toFormat('h:mm a')} · ${ev.durationMinutes} min
+                ${ev.venue ? ' · ' + ev.venue : ''}
+                ${ev.gm ? ' · ' + ev.gm : ''}
+                ${ev.cost > 0 ? ' · $' + ev.cost.toFixed(2) : ' · Free'}
+                ${ev.ticketsAvailable > 0 ? ' · ' + ev.ticketsAvailable + ' tickets' : ' · Sold out'}
+              </div>
+            </div>
+            <div class="agenda-event-actions">
+              ${isScheduled ? '<span class="scheduled-pill">Scheduled</span>' : ''}
+              <button class="favorite-btn ${isFav ? 'active' : ''}" data-id="${ev.id}">★</button>
+            </div>`;
+
+          item.addEventListener('click', e => {
+            if (e.target.classList.contains('favorite-btn')) {
+              this.toggleFavorite(ev.id);
+              e.target.classList.toggle('active');
+              return;
+            }
+            this.selectEvent(ev.id);
+            document.querySelectorAll('.agenda-event.selected').forEach(el => el.classList.remove('selected'));
+            item.classList.add('selected');
+          });
+
+          group.appendChild(item);
+        }
+        wrap.appendChild(group);
+      }
+
+      // Load more button
+      if (shown < sorted.length) {
+        const btn = document.createElement('button');
+        btn.className = 'load-more-btn';
+        btn.textContent = `Show more (${sorted.length - shown} remaining)`;
+        btn.addEventListener('click', () => { st._agendaPage++; this.render(); });
+        wrap.appendChild(btn);
+      }
+
+      panel.innerHTML = '';
+      panel.appendChild(wrap);
+    },
+
+    // ---------- Right panel ----------
+    renderRightPanel() {
+      const st  = this.state;
+      const el  = document.getElementById('right-panel');
+      const id  = st.selectedId;
+
+      if (!id || !st.eventMap[id]) {
+        el.innerHTML = '';
+        el.appendChild(this.buildDefaultRight());
+        return;
+      }
+
+      el.innerHTML = '';
+      el.appendChild(this.buildEventDetail(id));
+    },
+
+    buildDefaultRight() {
+      const st        = this.state;
+      const scheduled = [...st.schedule].map(i => st.eventMap[i]).filter(Boolean);
+      const totalH    = (scheduled.reduce((s,e) => s + e.durationMinutes, 0) / 60).toFixed(1);
+      const totalCost = scheduled.reduce((s,e) => s + e.cost, 0).toFixed(2);
+      const frag      = document.createDocumentFragment();
+
+      if (scheduled.length === 0) {
+        const div = document.createElement('div');
+        div.className = 'empty-right';
+        div.innerHTML = '<div class="empty-right-icon">📅</div><div><strong>Your schedule is empty</strong></div><div style="font-size:12px;margin-top:4px;">Browse events and click to add them to your schedule.</div>';
+        frag.appendChild(div);
+        return frag;
+      }
+
+      // Summary
+      const sumSec = document.createElement('div');
+      sumSec.className = 'right-panel-section';
+      sumSec.innerHTML = `<div class="right-section-title">My Schedule</div>
+        <div class="schedule-summary">
+          <div class="summary-stat"><div class="stat-val">${scheduled.length}</div><div class="stat-label">Events</div></div>
+          <div class="summary-stat"><div class="stat-val">${totalH}</div><div class="stat-label">Hours</div></div>
+          <div class="summary-stat"><div class="stat-val">$${totalCost}</div><div class="stat-label">Cost</div></div>
+        </div>
+        <div class="export-actions">
+          <button class="btn btn-secondary" id="exp-csv">⬇ Export CSV</button>
+          <button class="btn btn-secondary" id="exp-ical">⬇ Export iCal (.ics)</button>
+          <button class="btn btn-ghost"     id="exp-print">🖨 Print Schedule</button>
+        </div>`;
+      frag.appendChild(sumSec);
+
+      // Recommendations
+      const recs = Recs.recommend(st);
+      if (recs.length > 0) {
+        const recSec = document.createElement('div');
+        recSec.className = 'right-panel-section';
+        let html = `<div class="right-section-title">Recommended for You</div>`;
+        for (const { win, events } of recs) {
+          const ws = DateTime.fromMillis(win.startMs, { zone: TZ });
+          const we = DateTime.fromMillis(win.endMs,   { zone: TZ });
+          html += `<div class="rec-window"><div class="rec-window-time">${ws.toFormat('ccc h:mm a')} – ${we.toFormat('h:mm a')} (${Math.round(win.durationMin)} min free)</div>`;
+          for (const ev of events) {
+            const c  = catColor(ev.category);
+            const es = DateTime.fromMillis(ev.startMs, { zone: TZ });
+            html += `<div class="rec-event" data-id="${ev.id}" style="border-left:3px solid ${c.bd}">
+              <div class="rec-event-title">${ev.title}</div>
+              <div class="rec-event-meta">${catLabel(ev.category)} · ${es.toFormat('h:mm a')} · ${ev.durationMinutes} min · ${ev.venue||''}${ev.cost > 0 ? ' · $'+ev.cost.toFixed(2) : ' · Free'}</div>
+            </div>`;
+          }
+          html += `</div>`;
+        }
+        recSec.innerHTML = html;
+        recSec.querySelectorAll('.rec-event').forEach(el => {
+          el.addEventListener('click', () => this.selectEvent(el.dataset.id));
+        });
+        frag.appendChild(recSec);
+      }
+
+      // Wire export buttons after DOM insertion
+      setTimeout(() => {
+        document.getElementById('exp-csv')   ?.addEventListener('click', () => Exports.exportCSV(scheduled));
+        document.getElementById('exp-ical')  ?.addEventListener('click', () => Exports.exportICS(scheduled));
+        document.getElementById('exp-print') ?.addEventListener('click', () => Exports.printSchedule(scheduled));
+      }, 0);
+
+      return frag;
+    },
+
+    buildEventDetail(id) {
+      const st          = this.state;
+      const ev          = st.eventMap[id];
+      const isScheduled = st.schedule.has(id);
+      const isFav       = st.favorites.has(id);
+      const c           = catColor(ev.category);
+      const scheduled   = [...st.schedule].map(i => st.eventMap[i]).filter(Boolean);
+      const conflicts   = Scheduler.getConflicts(ev, scheduled, st.prefs);
+      const sTime       = DateTime.fromMillis(ev.startMs, { zone: TZ });
+      const eTime       = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+
+      const frag = document.createDocumentFragment();
+
+      // Header section
+      const headerSec = document.createElement('div');
+      headerSec.className = 'right-panel-section';
+      headerSec.innerHTML = `
+        <div class="event-detail-header">
+          <div class="event-detail-cat" style="background:${c.bg};color:${c.tx};border:1px solid ${c.bd};align-self:flex-start">${catLabel(ev.category)}</div>
+          <div class="event-detail-title">${ev.title}</div>
+          <div class="event-detail-id">${ev.id}</div>
+        </div>
+        <div class="event-action-bar">
+          ${isScheduled
+            ? `<button class="btn btn-danger" id="btn-remove">Remove from Schedule</button>`
+            : `<button class="btn btn-primary" id="btn-add">+ Add to Schedule</button>`}
+          <button class="btn btn-ghost" id="btn-fav">${isFav ? '★ Favorited' : '☆ Favorite'}</button>
+        </div>`;
+      frag.appendChild(headerSec);
+
+      // Conflict warning
+      if (conflicts.length > 0) {
+        const warn = document.createElement('div');
+        warn.className = 'right-panel-section';
+        let html = `<div class="conflict-banner"><strong>⚠ ${isScheduled ? 'Active conflicts' : 'Would conflict with'}:</strong>`;
+        for (const cf of conflicts) {
+          const cs = DateTime.fromMillis(cf.startMs, { zone: TZ });
+          html += `<div class="conflict-item">• ${cf.title} (${cs.toFormat('h:mm a')})</div>`;
+        }
+        html += `</div>`;
+        if (!isScheduled && conflicts.length > 0) {
+          const alts = Scheduler.findAlternatives(ev, st.filteredEvents, scheduled, st.prefs);
+          if (alts.length > 0) {
+            html += `<div class="right-section-title" style="margin-top:8px">Alternative Sessions</div><div class="alt-sessions">`;
+            for (const alt of alts) {
+              const as = DateTime.fromMillis(alt.startMs, { zone: TZ });
+              html += `<div class="alt-session" data-id="${alt.id}">
+                <strong>${alt.title}</strong><br>
+                <span style="color:var(--color-text-muted);font-size:10px">${as.toFormat('ccc h:mm a')} · ${alt.venue} · ${alt.durationMinutes} min</span>
+              </div>`;
+            }
+            html += `</div>`;
+          }
+        }
+        warn.innerHTML = html;
+        warn.querySelectorAll('.alt-session').forEach(el => {
+          el.addEventListener('click', () => this.selectEvent(el.dataset.id));
+        });
+        frag.appendChild(warn);
+      }
+
+      // Event info table
+      const infoSec = document.createElement('div');
+      infoSec.className = 'right-panel-section';
+      const ticketsBadge = ev.ticketsAvailable > 0
+        ? `<span class="tickets-badge available">✓ ${ev.ticketsAvailable} available</span>`
+        : `<span class="tickets-badge soldout">Sold Out</span>`;
+
+      infoSec.innerHTML = `
+        <table class="event-info-table">
+          <tr><td>Date</td><td>${sTime.toFormat('cccc, MMMM d')}</td></tr>
+          <tr><td>Time</td><td>${sTime.toFormat('h:mm a')} – ${eTime.toFormat('h:mm a')}</td></tr>
+          <tr><td>Duration</td><td>${ev.durationMinutes} min</td></tr>
+          <tr><td>Venue</td><td>${ev.venue || '–'}${ev.room ? ', ' + ev.room : ''}${ev.tableNumber ? ' (Table ' + ev.tableNumber + ')' : ''}</td></tr>
+          ${ev.gm ? `<tr><td>GM</td><td>${ev.gm}</td></tr>` : ''}
+          <tr><td>System</td><td>${ev.system || '–'}${ev.rulesEdition ? ' (' + ev.rulesEdition + ')' : ''}</td></tr>
+          <tr><td>Players</td><td>${ev.minPlayers}–${ev.maxPlayers}</td></tr>
+          <tr><td>Age</td><td>${ev.ageRequirement || '–'}</td></tr>
+          <tr><td>Experience</td><td>${ev.experienceRequired || '–'}</td></tr>
+          <tr><td>Cost</td><td>${ev.cost > 0 ? '$' + ev.cost.toFixed(2) : 'Free'}</td></tr>
+          <tr><td>Tickets</td><td>${ticketsBadge}</td></tr>
+          ${ev.isTournament ? `<tr><td>Tournament</td><td>Round ${ev.roundNumber || 1} of ${ev.totalRounds || 1}</td></tr>` : ''}
+          ${ev.materialsRequired ? `<tr><td>Materials</td><td>Required${ev.materialsDetails ? ': ' + ev.materialsDetails : ''}</td></tr>` : ''}
+        </table>`;
+      frag.appendChild(infoSec);
+
+      // Description
+      if (ev.shortDescription || ev.description) {
+        const descSec = document.createElement('div');
+        descSec.className = 'right-panel-section';
+        const text = ev.description || ev.shortDescription;
+        descSec.innerHTML = `<div class="right-section-title">Description</div>
+          <div class="event-desc" id="ev-desc-text">${text}</div>
+          ${text.length > 200 ? '<button class="expand-desc" id="expand-desc-btn">Show less</button>' : ''}`;
+        if (text.length > 200) {
+          const descEl = descSec.querySelector('#ev-desc-text');
+          const btn    = descSec.querySelector('#expand-desc-btn');
+          btn.addEventListener('click', () => {
+            descEl.classList.toggle('truncated');
+            btn.textContent = descEl.classList.contains('truncated') ? 'Show more' : 'Show less';
+          });
+        }
+        frag.appendChild(descSec);
+      }
+
+      // Website
+      if (ev.website) {
+        const webSec = document.createElement('div');
+        webSec.className = 'right-panel-section';
+        webSec.innerHTML = `<a href="${ev.website}" target="_blank" rel="noopener" class="btn-link">External website ↗</a>`;
+        frag.appendChild(webSec);
+      }
+
+      // Wire buttons after return
+      setTimeout(() => {
+        document.getElementById('btn-add')?.addEventListener('click', () => {
+          this.addToSchedule(id);
+          this.renderRightPanel();
+        });
+        document.getElementById('btn-remove')?.addEventListener('click', () => {
+          this.removeFromSchedule(id);
+          this.renderRightPanel();
+        });
+        document.getElementById('btn-fav')?.addEventListener('click', () => {
+          this.toggleFavorite(id);
+          this.renderRightPanel();
+        });
+      }, 0);
+
+      return frag;
+    },
+
+    // ---------- Settings modal ----------
+    openSettings() {
+      const prefs = this.state.prefs;
+      document.getElementById('s-same-venue').value  = prefs.sameVenueBuffer;
+      document.getElementById('s-cross-venue').value = prefs.crossVenueBuffer;
+      document.getElementById('settings-modal').classList.remove('hidden');
+    },
+
+    closeSettings() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    },
+
+    saveSettings() {
+      this.state.prefs.sameVenueBuffer  = parseInt(document.getElementById('s-same-venue').value)  || 5;
+      this.state.prefs.crossVenueBuffer = parseInt(document.getElementById('s-cross-venue').value) || 15;
+      this.persistUser();
+      this.closeSettings();
+      this.scheduleRender();
+      this.showToast('Settings saved');
+    },
+
+    // ---------- Keyboard ----------
+    bindKeyboard() {
+      document.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); this.undo(); }
+        if (e.key === 'Escape') {
+          this.closeSettings();
+          if (this.state.selectedId) { this.state.selectedId = null; this.renderRightPanel(); }
+        }
+      });
+    },
+
+    // ---------- Toast ----------
+    showToast(msg, type) {
+      const el = document.createElement('div');
+      el.className = 'toast' + (type ? ' ' + type : '');
+      el.textContent = msg;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    },
+  };
+
+  // Attach exports to Exports object (use function form so `this` isn't needed)
+  Exports.exportCSV = function(events) {
+    this.download(this.toCSV(events), 'gencon_schedule.csv', 'text/csv;charset=utf-8;');
+  };
+  Exports.exportICS = function(events) {
+    this.download(this.toICS(events), 'gencon_schedule.ics', 'text/calendar;charset=utf-8;');
+  };
+
+  // ================================================================
+  // BOOT
+  // ================================================================
+  document.addEventListener('DOMContentLoaded', () => App.init());
+
+})();
+</script>
+</body>
+</html>
