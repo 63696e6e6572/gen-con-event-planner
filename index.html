@@ -204,6 +204,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .cal-event .ev-venue { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
 .cal-event .ev-time { font-size: 10px; opacity: .75; }
 .cal-event .ev-sessions { font-size: 9px; font-weight: 700; opacity: .9; background: rgba(0,0,0,.12); border-radius: 3px; padding: 0 3px; display: inline-block; margin-top: 1px; }
+.cal-event .ev-fav-btn { position: absolute; top: 1px; right: 2px; background: none; border: none; cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 2px; opacity: 0; transition: opacity .1s; color: rgba(0,0,0,.4); }
+.cal-event .ev-fav-btn.active { opacity: 1; color: #f59e0b; }
+.cal-event:hover .ev-fav-btn { opacity: 1; }
+.cal-event .ev-fav-btn:hover { color: #f59e0b; }
 .session-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: #e0e7ff; color: #3730a3; border: 1px solid #a5b4fc; white-space: nowrap; cursor: default; }
 .session-link { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); margin-bottom: 3px; cursor: pointer; font-size: 11px; }
 .session-link:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
@@ -211,6 +215,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .session-link .sl-time { font-weight: 600; color: var(--color-primary); min-width: 80px; }
 .session-link .sl-venue { color: var(--color-text-muted); flex: 1; }
 .session-link .sl-status { font-size: 10px; }
+.session-link .sl-fav { margin-left: auto; font-size: 13px; cursor: pointer; color: var(--color-text-faint); line-height: 1; padding: 0 2px; }
+.session-link .sl-fav.active { color: #f59e0b; }
+.session-link .sl-fav:hover { color: #f59e0b; }
+.right-section-title-row { display: flex; align-items: center; margin-bottom: 10px; }
+.right-section-title-row .right-section-title { margin-bottom: 0; flex: 1; }
+.fav-all-btn { background: none; border: 1px solid var(--color-border); border-radius: var(--radius); cursor: pointer; font-size: 11px; padding: 2px 8px; color: var(--color-text-muted); }
+.fav-all-btn:hover { border-color: #f59e0b; color: #f59e0b; }
+.fav-all-btn.active { border-color: #f59e0b; color: #f59e0b; background: #fffbeb; }
 .cal-drop-indicator {
   position: absolute; left: 2px; right: 2px; height: 3px; background: var(--color-primary);
   border-radius: 2px; pointer-events: none; z-index: 20; display: none;
@@ -1171,7 +1183,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         (height > 22 ? `<div class="ev-time">${dt.toFormat('h:mm a')}</div>` : '') +
         (showVenue && ev.venue ? `<div class="ev-venue">${ev.venue}</div>` : '') +
         (sessionCount > 1 ? `<div class="ev-sessions">${sessionCount} sessions</div>` : '') +
-        (isFav ? '<span style="position:absolute;top:2px;right:3px;font-size:10px;">★</span>' : (isNew ? '<div class="ev-new">NEW</div>' : ''));
+        `<button class="ev-fav-btn${isFav ? ' active' : ''}" title="Favorite">★</button>` +
+        (isNew && !isFav ? '<div class="ev-new">NEW</div>' : '');
       return div;
     },
 
@@ -1203,7 +1216,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
     },
 
-    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, newEventIds, onEventClick, onDrop) {
+    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, newEventIds, onEventClick, onDrop, onFavClick) {
       const col = document.createElement('div');
       col.className = 'cal-day-col';
       col.dataset.date = dayDt.toISODate();
@@ -1265,7 +1278,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           block.classList.add('dragging');
         });
         block.addEventListener('dragend', () => block.classList.remove('dragging'));
-        block.addEventListener('click', e => { e.stopPropagation(); onEventClick(ev.id); });
+        block.addEventListener('click', e => {
+          e.stopPropagation();
+          if (e.target.closest('.ev-fav-btn')) { onFavClick && onFavClick(ev.id); return; }
+          onEventClick(ev.id);
+        });
         fragment.appendChild(block);
       }
       inner.appendChild(fragment);
@@ -2292,7 +2309,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         const col = CalRender.renderDayColumn(
           day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
           id => this.selectEvent(id),
-          (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
+          (id, newStartMs) => this.rescheduleEvent(id, newStartMs),
+          id => { this.toggleFavorite(id); this.scheduleRender(); }
         );
         colsWrap.appendChild(col);
       }
@@ -2359,7 +2377,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const col = CalRender.renderDayColumn(
         day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
         id => this.selectEvent(id),
-        (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
+        (id, newStartMs) => this.rescheduleEvent(id, newStartMs),
+        id => { this.toggleFavorite(id); this.scheduleRender(); }
       );
       col.style.flex = '1';
       colsWrap.appendChild(col);
@@ -2784,25 +2803,51 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       if (sessionIds && sessionIds.length > 1) {
         const sessionSec = document.createElement('div');
         sessionSec.className = 'right-panel-section';
-        let html = `<div class="right-section-title">All Sessions (${sessionIds.length})</div>`;
+        const allFaved = sessionIds.every(sid => st.favorites.has(sid));
+        let html = `<div class="right-section-title-row">
+          <span class="right-section-title">All Sessions (${sessionIds.length})</span>
+          <button class="fav-all-btn${allFaved ? ' active' : ''}" id="fav-all-sessions-btn">${allFaved ? '★ All favorited' : '☆ Favorite all'}</button>
+        </div>`;
         const sortedSessions = sessionIds
           .map(sid => st.eventMap[sid])
           .filter(Boolean)
           .sort((a, b) => a.startMs - b.startMs);
         for (const s of sortedSessions) {
           const ss      = DateTime.fromMillis(s.startMs, { zone: TZ });
-          const se      = DateTime.fromMillis(s.endMs,   { zone: TZ });
           const isSelf  = s.id === id;
           const isSched = st.schedule.has(s.id);
+          const isSFav  = st.favorites.has(s.id);
           html += `<div class="session-link ${isSelf ? 'this-session' : ''}" data-id="${s.id}">
             <span class="sl-time">${ss.toFormat('ccc h:mm a')}</span>
             <span class="sl-venue">${s.venue || '—'}${s.room ? ', ' + s.room : ''}</span>
             <span class="sl-status">${isSelf ? '← this one' : isSched ? '✓ scheduled' : s.ticketsAvailable > 0 ? s.ticketsAvailable + ' left' : 'sold out'}</span>
+            <span class="sl-fav${isSFav ? ' active' : ''}" data-fav-id="${s.id}">★</span>
           </div>`;
         }
         sessionSec.innerHTML = html;
         sessionSec.querySelectorAll('.session-link:not(.this-session)').forEach(el => {
-          el.addEventListener('click', () => this.selectEvent(el.dataset.id));
+          el.addEventListener('click', e => {
+            if (e.target.closest('.sl-fav')) return;
+            this.selectEvent(el.dataset.id);
+          });
+        });
+        sessionSec.querySelectorAll('.sl-fav').forEach(el => {
+          el.addEventListener('click', e => {
+            e.stopPropagation();
+            this.toggleFavorite(el.dataset.favId);
+            this.renderRightPanel();
+          });
+        });
+        const favAllBtn = sessionSec.querySelector('#fav-all-sessions-btn');
+        favAllBtn && favAllBtn.addEventListener('click', () => {
+          if (allFaved) {
+            sessionIds.forEach(sid => st.favorites.delete(sid));
+          } else {
+            sessionIds.forEach(sid => st.favorites.add(sid));
+          }
+          this.persistUser();
+          this.renderRightPanel();
+          this.scheduleRender();
         });
         frag.appendChild(sessionSec);
       }
