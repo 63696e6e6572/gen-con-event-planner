@@ -2488,9 +2488,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         const dayEvents = st.filteredEvents.filter(ev => {
           const evDay = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
           if (evDay === iso) return true;
-          // Overnight continuation: started yesterday, ends today
-          const endDay = DateTime.fromMillis(ev.endMs, { zone: TZ }).toISODate();
-          return endDay === iso && evDay !== iso;
+          // Overnight continuation: started yesterday, ends today *after* midnight
+          // Events ending exactly at 00:00 are not true overnights — exclude them.
+          const endDt  = DateTime.fromMillis(ev.endMs, { zone: TZ });
+          const endDay = endDt.toISODate();
+          const endsAfterMidnight = endDt.hour > 0 || endDt.minute > 0 || endDt.second > 0;
+          return endDay === iso && evDay !== iso && endsAfterMidnight;
         });
         const col = CalRender.renderDayColumn(
           day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
