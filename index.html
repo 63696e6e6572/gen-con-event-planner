@@ -127,6 +127,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .sidebar-section { padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
 .sidebar-section:last-child { border-bottom: none; }
 .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-faint); margin-bottom: 8px; }
+.section-title.collapsible { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; margin-bottom: 0; padding-bottom: 2px; }
+.section-title.collapsible:hover { color: var(--color-text-muted); }
+.section-title.collapsible .toggle-arrow { font-style: normal; font-size: 9px; }
+.collapsible-body { margin-top: 8px; }
+.collapsible-body.collapsed { display: none; }
+.filter-venue-list { display: flex; flex-direction: column; gap: 1px; max-height: 180px; overflow-y: auto; }
+.filter-age-list, .filter-exp-list { display: flex; flex-direction: column; gap: 1px; }
 .search-input {
   width: 100%; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: var(--radius);
   font-size: 13px; outline: none; background: var(--color-bg); color: var(--color-text);
@@ -505,8 +512,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         <label class="toggle-row"><input type="checkbox" id="filter-scheduled"> My schedule only</label>
       </div>
       <div class="sidebar-section">
-        <div class="section-title">Days</div>
-        <div id="filter-days" class="filter-day-list"></div>
+        <div class="section-title collapsible" data-body="body-days">Days <span class="toggle-arrow">▸</span></div>
+        <div class="collapsible-body collapsed" id="body-days">
+          <div id="filter-days" class="filter-day-list"></div>
+        </div>
       </div>
       <div class="sidebar-section">
         <div class="section-title">Event Type</div>
@@ -517,8 +526,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         <select id="filter-system" class="filter-select"><option value="">All systems</option></select>
       </div>
       <div class="sidebar-section">
-        <div class="section-title">Venue</div>
-        <select id="filter-venue" class="filter-select"><option value="">All venues</option></select>
+        <div class="section-title collapsible" data-body="body-venue">Venue <span class="toggle-arrow">▸</span></div>
+        <div class="collapsible-body collapsed" id="body-venue">
+          <div id="filter-venue" class="filter-venue-list"></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title collapsible" data-body="body-age">Age <span class="toggle-arrow">▸</span></div>
+        <div class="collapsible-body collapsed" id="body-age">
+          <div id="filter-age" class="filter-age-list"></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title collapsible" data-body="body-exp">Experience <span class="toggle-arrow">▸</span></div>
+        <div class="collapsible-body collapsed" id="body-exp">
+          <div id="filter-experience" class="filter-exp-list"></div>
+        </div>
       </div>
       <div class="sidebar-section">
         <div class="section-title">Start Time</div>
@@ -1317,6 +1340,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         days:         new Set(),
         venues:       new Set(),
         systems:      new Set(),
+        ages:         new Set(),
+        experiences:  new Set(),
         timeFrom:     '',
         timeTo:       '',
         durMin:       '',
@@ -1734,11 +1759,49 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       // --- Systems (rebuilt dynamically with counts; see rebuildSystemOptions) ---
       // Initial build deferred to rebuildSystemOptions() called from applyFilters()
 
-      // --- Venues ---
+      // --- Venues (multi-select checkboxes) ---
       const venEl  = document.getElementById('filter-venue');
       const venues = [...new Set(st.events.map(e => e.venue).filter(Boolean))].sort();
-      venEl.innerHTML = '<option value="">All venues</option>';
-      for (const v of venues) venEl.insertAdjacentHTML('beforeend', `<option value="${v}">${v}</option>`);
+      venEl.innerHTML = '';
+      for (const v of venues) {
+        const label = document.createElement('label');
+        label.className = 'filter-check-item';
+        label.innerHTML = `<input type="checkbox" data-venue="${v}">
+          <span class="filter-check-label">${v}</span>
+          <span class="filter-check-count"></span>`;
+        label.querySelector('input').addEventListener('change', () => this.onFilterChange());
+        venEl.appendChild(label);
+      }
+
+      // --- Age ---
+      const ageEl  = document.getElementById('filter-age');
+      const ages   = [...new Set(st.events.map(e => e.ageRequirement).filter(Boolean))].sort();
+      ageEl.innerHTML = '';
+      for (const a of ages) {
+        const label = document.createElement('label');
+        label.className = 'filter-check-item';
+        const count = st.events.filter(e => e.ageRequirement === a).length;
+        label.innerHTML = `<input type="checkbox" data-age="${a}">
+          <span class="filter-check-label">${a}</span>
+          <span class="filter-check-count">${count.toLocaleString()}</span>`;
+        label.querySelector('input').addEventListener('change', () => this.onFilterChange());
+        ageEl.appendChild(label);
+      }
+
+      // --- Experience ---
+      const expEl  = document.getElementById('filter-experience');
+      const exps   = [...new Set(st.events.map(e => e.experienceRequired).filter(Boolean))].sort();
+      expEl.innerHTML = '';
+      for (const ex of exps) {
+        const label = document.createElement('label');
+        label.className = 'filter-check-item';
+        const count = st.events.filter(e => e.experienceRequired === ex).length;
+        label.innerHTML = `<input type="checkbox" data-exp="${ex}">
+          <span class="filter-check-label">${ex}</span>
+          <span class="filter-check-count">${count.toLocaleString()}</span>`;
+        label.querySelector('input').addEventListener('change', () => this.onFilterChange());
+        expEl.appendChild(label);
+      }
 
       // --- Cost ---
       const costs = [...new Set(st.events.map(e => e.cost))].sort((a,b) => a-b);
@@ -1775,7 +1838,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       document.getElementById('filter-favorites').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-scheduled').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-system').addEventListener('change', () => this.onFilterChange());
-      document.getElementById('filter-venue').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-time-from').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-time-to').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-dur-min').addEventListener('change', () => this.onFilterChange());
@@ -1783,6 +1845,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       document.getElementById('filter-cost-min').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-cost-max').addEventListener('change', () => this.onFilterChange());
       document.getElementById('clear-filters-btn').addEventListener('click', () => this.clearFilters());
+
+      // Collapsible section toggles
+      document.querySelectorAll('.section-title.collapsible').forEach(title => {
+        title.addEventListener('click', () => {
+          const body  = document.getElementById(title.dataset.body);
+          if (!body) return;
+          const now   = body.classList.toggle('collapsed');
+          title.querySelector('.toggle-arrow').textContent = now ? '▸' : '▾';
+        });
+      });
     },
 
     onFilterChange() {
@@ -1802,14 +1874,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const selSystem = document.getElementById('filter-system').value;
       st.filters.systems = selSystem ? new Set([selSystem]) : new Set();
 
-      const selVenue = document.getElementById('filter-venue').value;
-      st.filters.venues = selVenue ? new Set([selVenue]) : new Set();
-
+      st.filters.venues = new Set(
+        [...document.querySelectorAll('#filter-venue input:checked')].map(i => i.dataset.venue)
+      );
       st.filters.days = new Set(
         [...document.querySelectorAll('#filter-days input:checked')].map(i => i.dataset.day)
       );
       st.filters.categories = new Set(
         [...document.querySelectorAll('#filter-categories input:checked')].map(i => i.dataset.cat)
+      );
+      st.filters.ages = new Set(
+        [...document.querySelectorAll('#filter-age input:checked')].map(i => i.dataset.age)
+      );
+      st.filters.experiences = new Set(
+        [...document.querySelectorAll('#filter-experience input:checked')].map(i => i.dataset.exp)
       );
 
       this.applyFilters();
@@ -1837,6 +1915,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           if (!f.days.has(d)) return false;
         }
         if (f.venues.size > 0 && !f.venues.has(ev.venue)) return false;
+        if (f.ages.size > 0 && !f.ages.has(ev.ageRequirement)) return false;
+        if (f.experiences.size > 0 && !f.experiences.has(ev.experienceRequired)) return false;
         if (f.timeFrom) {
           const h = DateTime.fromMillis(ev.startMs, { zone: TZ }).hour;
           if (h < parseInt(f.timeFrom)) return false;
@@ -1863,6 +1943,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       this.rebuildSystemOptions();
       this.rebuildDayCounts();
       this.rebuildCategoryCounts();
+      this.rebuildVenueCounts();
+      this.rebuildAgeCounts();
+      this.rebuildExperienceCounts();
     },
 
     // Rebuild the Game System dropdown showing counts from filteredEvents,
@@ -1936,7 +2019,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       if (!skip.has('days')       && f.days.size > 0) {
         if (!f.days.has(DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate())) return false;
       }
-      if (!skip.has('venues')     && f.venues.size > 0     && !f.venues.has(ev.venue))         return false;
+      if (!skip.has('venues')      && f.venues.size > 0      && !f.venues.has(ev.venue))              return false;
+      if (!skip.has('ages')        && f.ages.size > 0        && !f.ages.has(ev.ageRequirement))        return false;
+      if (!skip.has('experiences') && f.experiences.size > 0 && !f.experiences.has(ev.experienceRequired)) return false;
       if (!skip.has('timeFrom')   && f.timeFrom && h() < parseInt(f.timeFrom))                  return false;
       if (!skip.has('timeTo')     && f.timeTo   && h() > parseInt(f.timeTo))                    return false;
       if (!skip.has('durMin')     && f.durMin   && ev.durationMinutes < parseInt(f.durMin))     return false;
@@ -1988,20 +2073,64 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       });
     },
 
+    rebuildVenueCounts() {
+      const skip = new Set(['venues']);
+      const counts = {};
+      for (const ev of this.state.events) {
+        if (this.passesFilters(ev, skip)) counts[ev.venue] = (counts[ev.venue] || 0) + 1;
+      }
+      document.querySelectorAll('#filter-venue .filter-check-item').forEach(item => {
+        const v   = item.querySelector('input').dataset.venue;
+        const n   = counts[v] || 0;
+        const badge = item.querySelector('.filter-check-count');
+        if (badge) badge.textContent = n.toLocaleString();
+        item.style.opacity = n === 0 ? '0.38' : '';
+      });
+    },
+
+    rebuildAgeCounts() {
+      const skip = new Set(['ages']);
+      const counts = {};
+      for (const ev of this.state.events) {
+        if (this.passesFilters(ev, skip)) counts[ev.ageRequirement] = (counts[ev.ageRequirement] || 0) + 1;
+      }
+      document.querySelectorAll('#filter-age .filter-check-item').forEach(item => {
+        const a   = item.querySelector('input').dataset.age;
+        const n   = counts[a] || 0;
+        const badge = item.querySelector('.filter-check-count');
+        if (badge) badge.textContent = n.toLocaleString();
+        item.style.opacity = n === 0 ? '0.38' : '';
+      });
+    },
+
+    rebuildExperienceCounts() {
+      const skip = new Set(['experiences']);
+      const counts = {};
+      for (const ev of this.state.events) {
+        if (this.passesFilters(ev, skip)) counts[ev.experienceRequired] = (counts[ev.experienceRequired] || 0) + 1;
+      }
+      document.querySelectorAll('#filter-experience .filter-check-item').forEach(item => {
+        const ex  = item.querySelector('input').dataset.exp;
+        const n   = counts[ex] || 0;
+        const badge = item.querySelector('.filter-check-count');
+        if (badge) badge.textContent = n.toLocaleString();
+        item.style.opacity = n === 0 ? '0.38' : '';
+      });
+    },
+
     clearFilters() {
       document.getElementById('search-input').value = '';
       document.getElementById('filter-available').checked = false;
       document.getElementById('filter-favorites').checked = false;
       document.getElementById('filter-scheduled').checked = false;
       document.getElementById('filter-system').value = '';
-      document.getElementById('filter-venue').value = '';
       document.getElementById('filter-time-from').value = '';
       document.getElementById('filter-time-to').value   = '';
       document.getElementById('filter-dur-min').value   = '';
       document.getElementById('filter-dur-max').value   = '';
       document.getElementById('filter-cost-min').value  = '';
       document.getElementById('filter-cost-max').value  = '';
-      document.querySelectorAll('#filter-days input, #filter-categories input')
+      document.querySelectorAll('#filter-days input, #filter-categories input, #filter-venue input, #filter-age input, #filter-experience input')
         .forEach(cb => cb.checked = false);
       this.onFilterChange();
     },
@@ -2040,10 +2169,28 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         add(sys, () => { document.getElementById('filter-system').value = ''; f.systems = new Set(); });
       }
 
-      if (f.venues.size > 0) {
-        const ven = [...f.venues][0];
-        add(ven.length > 22 ? ven.slice(0, 20) + '…' : ven, () => {
-          document.getElementById('filter-venue').value = ''; f.venues = new Set();
+      for (const ven of f.venues) {
+        const label = ven.length > 22 ? ven.slice(0, 20) + '…' : ven;
+        add(label, () => {
+          const cb = document.querySelector(`#filter-venue input[data-venue="${ven}"]`);
+          if (cb) cb.checked = false;
+          f.venues.delete(ven);
+        });
+      }
+
+      for (const age of f.ages) {
+        add(age, () => {
+          const cb = document.querySelector(`#filter-age input[data-age="${age}"]`);
+          if (cb) cb.checked = false;
+          f.ages.delete(age);
+        });
+      }
+
+      for (const exp of f.experiences) {
+        add(exp, () => {
+          const cb = document.querySelector(`#filter-experience input[data-exp="${exp}"]`);
+          if (cb) cb.checked = false;
+          f.experiences.delete(exp);
         });
       }
 
