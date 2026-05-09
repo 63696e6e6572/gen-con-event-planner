@@ -1479,8 +1479,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         // Fall through to manual import
         this.showManualImport();
       } else {
+        // Background check failed (likely CORS from file:// — harmless; cached data is intact)
         this.showSyncIndicator(false);
-        this.showToast('Update check failed — using cached events', 'warning');
+        console.info('[AutoUpdate] Background check failed:', msg);
       }
     },
 
@@ -2759,6 +2760,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         </table>`;
       frag.appendChild(infoSec);
 
+      // Description (above sessions)
+      if (ev.shortDescription || ev.description) {
+        const descSec = document.createElement('div');
+        descSec.className = 'right-panel-section';
+        const text = ev.description || ev.shortDescription;
+        descSec.innerHTML = `<div class="right-section-title">Description</div>
+          <div class="event-desc" id="ev-desc-text">${text}</div>
+          ${text.length > 200 ? '<button class="expand-desc" id="expand-desc-btn">Show less</button>' : ''}`;
+        if (text.length > 200) {
+          const descEl = descSec.querySelector('#ev-desc-text');
+          const btn    = descSec.querySelector('#expand-desc-btn');
+          btn.addEventListener('click', () => {
+            descEl.classList.toggle('truncated');
+            btn.textContent = descEl.classList.contains('truncated') ? 'Show more' : 'Show less';
+          });
+        }
+        frag.appendChild(descSec);
+      }
+
       // Other sessions
       const sessionIds = st.sessionGroups.get(id);
       if (sessionIds && sessionIds.length > 1) {
@@ -2787,30 +2807,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         frag.appendChild(sessionSec);
       }
 
-      // Description
-      if (ev.shortDescription || ev.description) {
-        const descSec = document.createElement('div');
-        descSec.className = 'right-panel-section';
-        const text = ev.description || ev.shortDescription;
-        descSec.innerHTML = `<div class="right-section-title">Description</div>
-          <div class="event-desc" id="ev-desc-text">${text}</div>
-          ${text.length > 200 ? '<button class="expand-desc" id="expand-desc-btn">Show less</button>' : ''}`;
-        if (text.length > 200) {
-          const descEl = descSec.querySelector('#ev-desc-text');
-          const btn    = descSec.querySelector('#expand-desc-btn');
-          btn.addEventListener('click', () => {
-            descEl.classList.toggle('truncated');
-            btn.textContent = descEl.classList.contains('truncated') ? 'Show more' : 'Show less';
-          });
-        }
-        frag.appendChild(descSec);
-      }
-
-      // Website
-      if (ev.website) {
+      // Gen Con event page link (always present — constructed from event ID)
+      {
         const webSec = document.createElement('div');
         webSec.className = 'right-panel-section';
-        webSec.innerHTML = `<a href="${ev.website}" target="_blank" rel="noopener" class="btn-link">External website ↗</a>`;
+        const genconUrl = `https://www.gencon.com/events/${encodeURIComponent(id)}`;
+        webSec.innerHTML = `<a href="${genconUrl}" target="_blank" rel="noopener" class="btn-link">View on gencon.com ↗</a>`;
         frag.appendChild(webSec);
       }
 
