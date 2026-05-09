@@ -268,6 +268,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .load-more-btn { display: block; width: 100%; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius); background: none; cursor: pointer; color: var(--color-text-muted); font-size: 12px; text-align: center; }
 .load-more-btn:hover { background: var(--color-surface); }
 
+/* Filter chips bar */
+.filter-chips-bar { display:flex; align-items:center; flex-wrap:wrap; gap:5px; padding:6px 10px; background:var(--color-surface); border-bottom:1px solid var(--color-border); flex:none; }
+.filter-chip { display:inline-flex; align-items:center; gap:3px; background:var(--color-primary-light); color:var(--color-primary); border:1px solid #bfdbfe; border-radius:12px; padding:2px 8px 2px 10px; font-size:11px; font-weight:500; white-space:nowrap; }
+.filter-chip-x { background:none; border:none; cursor:pointer; color:var(--color-primary); font-size:15px; line-height:1; padding:0 0 0 1px; opacity:.6; }
+.filter-chip-x:hover { opacity:1; }
+.chips-clear-all { font-size:11px; color:var(--color-text-muted); cursor:pointer; background:none; border:none; padding:2px 6px; text-decoration:underline; margin-left:2px; }
+.chips-clear-all:hover { color:var(--color-danger); }
+
+/* New-this-import badge */
+.new-badge { display:inline-flex; align-items:center; background:#dcfce7; color:#15803d; border:1px solid #86efac; border-radius:8px; padding:1px 6px; font-size:9px; font-weight:700; letter-spacing:.04em; vertical-align:middle; margin-left:4px; }
+.ev-new { position:absolute; top:2px; right:3px; background:#22c55e; border-radius:3px; padding:0 3px; font-size:8px; font-weight:700; color:#fff; line-height:1.6; pointer-events:none; }
+
 /* ================================================================
    RIGHT SIDEBAR
    ================================================================ */
@@ -1022,14 +1034,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         cols[col] = ev.endMs;
         return { ev, col };
       });
-      // compute span (max col in overlapping group + 1)
-      const result = placed.map(p => {
-        const span = placed
-          .filter(q => q.ev.startMs < p.ev.endMs && q.ev.endMs > p.ev.startMs)
-          .reduce((mx, q) => Math.max(mx, q.col + 1), 1);
-        return { ev: p.ev, col: p.col, span };
-      });
-      return result;
+      // Union-Find: group all transitively overlapping events so every event
+      // in a cluster shares the same span (= max column in cluster + 1).
+      // Without this, indirectly-connected events get inconsistent widths and overlap visually.
+      const n = placed.length;
+      const parent = Array.from({ length: n }, (_, i) => i);
+      function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+      function union(i, j) { const pi = find(i), pj = find(j); if (pi !== pj) parent[pi] = pj; }
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          if (placed[i].ev.startMs < placed[j].ev.endMs && placed[i].ev.endMs > placed[j].ev.startMs) {
+            union(i, j);
+          }
+        }
+      }
+      const compMax = new Map();
+      for (let i = 0; i < n; i++) {
+        const root = find(i);
+        compMax.set(root, Math.max(compMax.get(root) || 0, placed[i].col + 1));
+      }
+      return placed.map((p, i) => ({ ev: p.ev, col: p.col, span: compMax.get(find(i)) }));
     },
 
     // Convert hour offset to px
@@ -1049,7 +1073,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       return Math.max(durH * HOUR_H, 20); // min 20px
     },
 
-    buildEventBlock(ev, isScheduled, isFav, hasConflict, col, span, containerWidth, sessionCount) {
+    buildEventBlock(ev, isScheduled, isFav, hasConflict, col, span, containerWidth, sessionCount, isNew) {
       const top    = this.msToPx(ev.startMs);
       const height = this.msToDurPx(ev.startMs, ev.endMs);
       const w      = containerWidth ? (containerWidth / span) - 2 : `${100 / span}%`;
@@ -1075,7 +1099,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         (height > 22 ? `<div class="ev-time">${dt.toFormat('h:mm a')}</div>` : '') +
         (showVenue && ev.venue ? `<div class="ev-venue">${ev.venue}</div>` : '') +
         (sessionCount > 1 ? `<div class="ev-sessions">${sessionCount} sessions</div>` : '') +
-        (isFav ? '<span style="position:absolute;top:2px;right:3px;font-size:10px;">★</span>' : '');
+        (isFav ? '<span style="position:absolute;top:2px;right:3px;font-size:10px;">★</span>' : (isNew ? '<div class="ev-new">NEW</div>' : ''));
       return div;
     },
 
@@ -1107,7 +1131,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
     },
 
-    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, onEventClick, onDrop) {
+    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, newEventIds, onEventClick, onDrop) {
       const col = document.createElement('div');
       col.className = 'cal-day-col';
       col.dataset.date = dayDt.toISODate();
@@ -1161,7 +1185,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         const isFav        = favSet.has(ev.id);
         const hasConflict  = isScheduled && conflictSet.has(ev.id);
         const sessionCount = sessionGroups ? (sessionGroups.get(ev.id) || []).length : 1;
-        const block        = this.buildEventBlock(ev, isScheduled, isFav, hasConflict, c, span, null, sessionCount);
+        const isNew        = !!(newEventIds && newEventIds.has(ev.id));
+        const block        = this.buildEventBlock(ev, isScheduled, isFav, hasConflict, c, span, null, sessionCount, isNew);
         block.draggable   = isScheduled;
         block.addEventListener('dragstart', e => {
           e.dataTransfer.setData('text/plain', ev.id);
@@ -1215,6 +1240,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       },
       filteredEvents: [],
       sessionGroups:  new Map(), // eventId -> [id, id, ...] (all sessions of same title)
+      newEventIds:    new Set(), // IDs added since the last import (empty on first load)
       selectedId:     null,
       undoStack:      [],
       renderPending:  false,
@@ -1235,10 +1261,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
     },
 
-    loadData(events, userData) {
+    loadData(events, userData, newEventIds = new Set()) {
       const st = this.state;
-      st.events   = events;
-      st.eventMap = Object.fromEntries(events.map(e => [e.id, e]));
+      st.events      = events;
+      st.eventMap    = Object.fromEntries(events.map(e => [e.id, e]));
+      st.newEventIds = newEventIds;
 
       // Derive convention days
       const daySet = new Set();
@@ -1313,6 +1340,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         this.setImportStatus('Please select a .xlsx file', 'error');
         return;
       }
+      // Capture existing IDs before we overwrite — used to flag truly new events
+      const prevIds  = new Set(this.state.events.map(e => e.id));
+      const hadData  = this.state.events.length > 0;
       this.setImportStatus('Reading file…', 'info', 10);
 
       const reader = new FileReader();
@@ -1338,7 +1368,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           }
 
           this.setImportStatus(`Ready! ${events.length.toLocaleString()} events loaded.`, 'info', 100);
-          setTimeout(() => this.loadData(events, userData), 300);
+          const newEventIds = hadData
+            ? new Set(events.filter(e => !prevIds.has(e.id)).map(e => e.id))
+            : new Set();
+          if (hadData && newEventIds.size > 0) {
+            this.showToast(`${newEventIds.size.toLocaleString()} new event${newEventIds.size > 1 ? 's' : ''} since last import`, 'success');
+          }
+          setTimeout(() => this.loadData(events, userData, newEventIds), 300);
         } catch (err) {
           console.error(err);
           this.setImportStatus('Error parsing file: ' + err.message, 'error');
@@ -1642,6 +1678,116 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       this.onFilterChange();
     },
 
+    // Build a row of dismissible chips representing every active filter.
+    // Returns a DOM element, or null if no filters are active.
+    buildFilterChipsBar() {
+      const st = this.state;
+      const f  = st.filters;
+      const chips = [];
+      const add = (label, clearFn) => chips.push({ label, clear: clearFn });
+
+      if (f.search) add(`"${f.search}"`, () => {
+        document.getElementById('search-input').value = ''; f.search = '';
+      });
+
+      for (const day of [...f.days].sort()) {
+        const dt = DateTime.fromISO(day, { zone: TZ });
+        add(dt.toFormat('ccc MMM d'), () => {
+          const cb = document.querySelector(`#filter-days input[data-day="${day}"]`);
+          if (cb) cb.checked = false;
+          f.days.delete(day);
+        });
+      }
+
+      for (const cat of f.categories) {
+        add(catLabel(cat), () => {
+          const cb = document.querySelector(`#filter-categories input[data-cat="${cat}"]`);
+          if (cb) cb.checked = false;
+          f.categories.delete(cat);
+        });
+      }
+
+      if (f.systems.size > 0) {
+        const sys = [...f.systems][0];
+        add(sys, () => { document.getElementById('filter-system').value = ''; f.systems = new Set(); });
+      }
+
+      if (f.venues.size > 0) {
+        const ven = [...f.venues][0];
+        add(ven.length > 22 ? ven.slice(0, 20) + '…' : ven, () => {
+          document.getElementById('filter-venue').value = ''; f.venues = new Set();
+        });
+      }
+
+      if (f.timeFrom) {
+        const lbl = document.querySelector(`#filter-time-from option[value="${f.timeFrom}"]`)?.textContent || f.timeFrom;
+        add(`After ${lbl}`, () => { document.getElementById('filter-time-from').value = ''; f.timeFrom = ''; });
+      }
+
+      if (f.timeTo) {
+        const lbl = document.querySelector(`#filter-time-to option[value="${f.timeTo}"]`)?.textContent || f.timeTo;
+        add(`Before ${lbl}`, () => { document.getElementById('filter-time-to').value = ''; f.timeTo = ''; });
+      }
+
+      if (f.durMin) {
+        const lbl = document.querySelector(`#filter-dur-min option[value="${f.durMin}"]`)?.textContent || `${f.durMin}+ min`;
+        add(lbl, () => { document.getElementById('filter-dur-min').value = ''; f.durMin = ''; });
+      }
+
+      if (f.durMax) {
+        const lbl = document.querySelector(`#filter-dur-max option[value="${f.durMax}"]`)?.textContent || `≤${f.durMax} min`;
+        add(lbl, () => { document.getElementById('filter-dur-max').value = ''; f.durMax = ''; });
+      }
+
+      if (f.costMin) add(`$${parseFloat(f.costMin).toFixed(0)}+`, () => {
+        document.getElementById('filter-cost-min').value = ''; f.costMin = '';
+      });
+
+      if (f.costMax) add(`≤$${parseFloat(f.costMax).toFixed(0)}`, () => {
+        document.getElementById('filter-cost-max').value = ''; f.costMax = '';
+      });
+
+      if (f.availableOnly) add('Available only', () => {
+        document.getElementById('filter-available').checked = false; f.availableOnly = false;
+      });
+
+      if (f.favoritesOnly) add('Favorites only', () => {
+        document.getElementById('filter-favorites').checked = false; f.favoritesOnly = false;
+      });
+
+      if (f.scheduledOnly) add('My schedule', () => {
+        document.getElementById('filter-scheduled').checked = false; f.scheduledOnly = false;
+      });
+
+      if (!chips.length) return null;
+
+      const bar = document.createElement('div');
+      bar.className = 'filter-chips-bar';
+
+      for (const chip of chips) {
+        const el = document.createElement('span');
+        el.className = 'filter-chip';
+        el.appendChild(document.createTextNode(chip.label));
+        const x = document.createElement('button');
+        x.className = 'filter-chip-x';
+        x.setAttribute('aria-label', 'Remove filter');
+        x.textContent = '×';
+        x.addEventListener('click', () => { chip.clear(); this.applyFilters(); this.scheduleRender(); });
+        el.appendChild(x);
+        bar.appendChild(el);
+      }
+
+      if (chips.length > 1) {
+        const clearAll = document.createElement('button');
+        clearAll.className = 'chips-clear-all';
+        clearAll.textContent = 'Clear all';
+        clearAll.addEventListener('click', () => this.clearFilters());
+        bar.appendChild(clearAll);
+      }
+
+      return bar;
+    },
+
     // ---------- Schedule mutations ----------
     pushUndo() {
       const st = this.state;
@@ -1832,7 +1978,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           return endDay === iso && evDay !== iso;
         });
         const col = CalRender.renderDayColumn(
-          day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups,
+          day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
           id => this.selectEvent(id),
           (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
         );
@@ -1844,6 +1990,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       container.appendChild(scrollArea);
 
       panel.innerHTML = '';
+      const chips = this.buildFilterChipsBar();
+      if (chips) panel.appendChild(chips);
       panel.appendChild(container);
 
       // Sync scroll between header and body
@@ -1907,6 +2055,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       scrollArea.appendChild(inner);
       container.appendChild(scrollArea);
       panel.innerHTML = '';
+      const chipsDay = this.buildFilterChipsBar();
+      if (chipsDay) panel.appendChild(chipsDay);
       panel.appendChild(container);
 
       // Scroll to 8 AM
@@ -1921,7 +2071,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const PAGE        = 200;
 
       if (!st.filteredEvents.length) {
-        panel.innerHTML = '<div class="cal-empty"><div class="cal-empty-icon">🔍</div><div>No events match your filters</div></div>';
+        panel.innerHTML = '';
+        const chipsEmpty = this.buildFilterChipsBar();
+        if (chipsEmpty) panel.appendChild(chipsEmpty);
+        panel.insertAdjacentHTML('beforeend', '<div class="cal-empty"><div class="cal-empty-icon">🔍</div><div>No events match your filters</div></div>');
         return;
       }
 
@@ -1971,11 +2124,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
           const sessionIds   = st.sessionGroups.get(ev.id);
           const sessionCount = sessionIds ? sessionIds.length : 1;
+          const isNew        = st.newEventIds.has(ev.id);
 
           item.innerHTML = `
             <div class="agenda-event-cat" style="background:${c.bg};color:${c.tx}">${catLabel(ev.category)}</div>
             <div class="agenda-event-body">
-              <div class="agenda-event-title">${ev.title}${sessionCount > 1 ? ` <span class="session-pill">⧗ ${sessionCount} sessions</span>` : ''}</div>
+              <div class="agenda-event-title">${ev.title}${sessionCount > 1 ? ` <span class="session-pill">⧗ ${sessionCount} sessions</span>` : ''}${isNew ? ' <span class="new-badge">NEW</span>' : ''}</div>
               <div class="agenda-event-meta">
                 ${sTime.toFormat('h:mm a')} – ${eTime.toFormat('h:mm a')} · ${ev.durationMinutes} min
                 ${ev.venue ? ' · ' + ev.venue : ''}
@@ -2015,6 +2169,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
 
       panel.innerHTML = '';
+      const chipsAgenda = this.buildFilterChipsBar();
+      if (chipsAgenda) panel.appendChild(chipsAgenda);
       panel.appendChild(wrap);
     },
 
@@ -2120,7 +2276,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       headerSec.className = 'right-panel-section';
       headerSec.innerHTML = `
         <div class="event-detail-header">
-          <div class="event-detail-cat" style="background:${c.bg};color:${c.tx};border:1px solid ${c.bd};align-self:flex-start">${catLabel(ev.category)}</div>
+          ${st.newEventIds.has(id)
+            ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                 <div class="event-detail-cat" style="background:${c.bg};color:${c.tx};border:1px solid ${c.bd}">${catLabel(ev.category)}</div>
+                 <span class="new-badge" style="font-size:10px;padding:2px 8px">NEW THIS IMPORT</span>
+               </div>`
+            : `<div class="event-detail-cat" style="background:${c.bg};color:${c.tx};border:1px solid ${c.bd};align-self:flex-start">${catLabel(ev.category)}</div>`
+          }
           <div class="event-detail-title">${ev.title}</div>
           <div class="event-detail-id">${ev.id}</div>
         </div>
