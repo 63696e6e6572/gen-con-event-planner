@@ -392,6 +392,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .rec-event-meta { color: var(--color-text-muted); font-size: 10px; }
 
 /* Event detail panel */
+.detail-back-btn { display: flex; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; font-size: 11px; color: var(--color-text-muted); padding: 0 0 8px; }
+.detail-back-btn:hover { color: var(--color-primary); }
 .event-detail-header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .event-detail-cat { border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .event-detail-title { font-size: 14px; font-weight: 700; color: var(--color-text); line-height: 1.35; }
@@ -1036,11 +1038,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
     },
 
     recommend(state) {
-      const { events, eventMap, schedule, favorites, prefs, conventionDays } = state;
+      const { events, eventMap, schedule, favorites, prefs, conventionDays, sessionGroups } = state;
       const scheduled = [...schedule].map(id => eventMap[id]).filter(Boolean);
       const favSet    = new Set(favorites);
       const windows   = Scheduler.getFreeWindows(scheduled, conventionDays, prefs);
       if (!windows.length) return [];
+
+      // Build a set of all event IDs that are effectively "already scheduled" —
+      // including every other session of the same title as any scheduled event.
+      const excludedIds = new Set();
+      for (const id of schedule) {
+        const grp = sessionGroups.get(id);
+        if (grp) grp.forEach(sid => excludedIds.add(sid));
+        else excludedIds.add(id);
+      }
 
       // Build interest weights
       const catW = {}, sysW = {};
@@ -1055,7 +1066,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       for (const win of windows.slice(0, 5)) {
         const candidates = events
           .filter(ev =>
-            !schedule.has(ev.id) &&
+            !excludedIds.has(ev.id) &&
             ev.startMs >= win.startMs &&
             ev.endMs   <= win.endMs + 5 * 60000 &&
             Scheduler.canAdd(ev, scheduled, prefs)
@@ -2388,6 +2399,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       this.renderRightPanel();
     },
 
+    deselect() {
+      if (!this.state.selectedId) return;
+      this.state.selectedId = null;
+      this.renderRightPanel();
+    },
+
     persistUser() {
       const st = this.state;
       Storage.saveUser({
@@ -2494,6 +2511,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       // Day columns
       const colsWrap = document.createElement('div');
       colsWrap.className = 'cal-day-columns';
+      colsWrap.addEventListener('click', () => this.deselect());
 
       for (const day of st.conventionDays) {
         const iso       = day.toISODate();
@@ -2571,6 +2589,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
       const colsWrap = document.createElement('div');
       colsWrap.className = 'cal-day-columns';
+      colsWrap.addEventListener('click', () => this.deselect());
       const col = CalRender.renderDayColumn(
         day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
         id => this.selectEvent(id),
@@ -2672,6 +2691,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
             </div>`;
 
           item.addEventListener('click', e => {
+            e.stopPropagation();
             if (e.target.classList.contains('favorite-btn')) {
               this.toggleFavorite(ev.id);
               e.target.classList.toggle('active');
@@ -2695,6 +2715,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         btn.addEventListener('click', () => { st._agendaPage++; this.render(); });
         wrap.appendChild(btn);
       }
+
+      wrap.addEventListener('click', () => this.deselect());
 
       panel.innerHTML = '';
       const chipsAgenda = this.buildFilterChipsBar();
@@ -2748,6 +2770,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         }
       }
 
+      wrap.addEventListener('click', () => this.deselect());
+
       panel.innerHTML = '';
       const chips = this.buildFilterChipsBar();
       if (chips) panel.appendChild(chips);
@@ -2787,6 +2811,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         </div>`;
 
       row.addEventListener('click', e => {
+        e.stopPropagation();
         if (e.target.classList.contains('favorite-btn')) {
           this.toggleFavorite(ev.id);
           e.target.classList.toggle('active');
@@ -2908,6 +2933,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
             </span>`;
 
           row.addEventListener('click', e => {
+            e.stopPropagation();
             if (e.target.classList.contains('favorite-btn')) {
               this.toggleFavorite(ev.id);
               e.target.classList.toggle('active');
@@ -2939,6 +2965,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         group.appendChild(body);
         wrap.appendChild(group);
       }
+
+      wrap.addEventListener('click', () => this.deselect());
 
       panel.innerHTML = '';
       const chips = this.buildFilterChipsBar();
@@ -3026,6 +3054,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const eTime       = DateTime.fromMillis(ev.endMs,   { zone: TZ });
 
       const frag = document.createDocumentFragment();
+
+      // Back button
+      const backBtn = document.createElement('button');
+      backBtn.className = 'detail-back-btn';
+      backBtn.innerHTML = '&#8592; Overview';
+      backBtn.style.cssText = 'margin: 8px 12px 0; display:flex;';
+      backBtn.addEventListener('click', () => { st.selectedId = null; this.renderRightPanel(); });
+      frag.appendChild(backBtn);
 
       // Header section
       const headerSec = document.createElement('div');
