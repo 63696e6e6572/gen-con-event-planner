@@ -2811,7 +2811,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       {
         const webSec = document.createElement('div');
         webSec.className = 'right-panel-section';
-        const genconUrl = `https://www.gencon.com/events/${encodeURIComponent(id)}`;
+        const genconUrl = `https://www.gencon.com/events/${id.slice(7)}`;
         webSec.innerHTML = `<a href="${genconUrl}" target="_blank" rel="noopener" class="btn-link">View on gencon.com ↗</a>`;
         frag.appendChild(webSec);
       }
