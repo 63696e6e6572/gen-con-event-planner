@@ -1772,7 +1772,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         x.className = 'filter-chip-x';
         x.setAttribute('aria-label', 'Remove filter');
         x.textContent = '×';
-        x.addEventListener('click', () => { chip.clear(); this.applyFilters(); this.scheduleRender(); });
+        x.addEventListener('click', () => { chip.clear(); this.onFilterChange(); });
         el.appendChild(x);
         bar.appendChild(el);
       }
