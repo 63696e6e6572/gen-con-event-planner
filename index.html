@@ -211,6 +211,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .cal-event .ev-venue { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
 .cal-event .ev-time { font-size: 10px; opacity: .75; }
 .cal-event .ev-sessions { font-size: 9px; font-weight: 700; opacity: .9; background: rgba(0,0,0,.12); border-radius: 3px; padding: 0 3px; display: inline-block; margin-top: 1px; }
+.cal-event .ev-midnight-line { position: absolute; left: 0; right: 0; border-top: 2px dashed rgba(0,0,0,.25); pointer-events: none; }
+.cal-event .ev-midnight-label { position: absolute; right: 3px; top: -9px; font-size: 8px; font-weight: 700; opacity: .5; line-height: 1; }
 .cal-event .ev-fav-btn { position: absolute; top: 1px; right: 2px; background: none; border: none; cursor: pointer; font-size: 11px; line-height: 1; padding: 1px 2px; opacity: 0; transition: opacity .1s; color: rgba(0,0,0,.4); }
 .cal-event .ev-fav-btn.active { opacity: 1; color: #f59e0b; }
 .cal-event:hover .ev-fav-btn { opacity: 1; }
@@ -1228,6 +1230,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const dt = DateTime.fromMillis(ev.startMs, { zone: TZ });
       const et = DateTime.fromMillis(ev.endMs,   { zone: TZ });
 
+      // Detect midnight crossing: start is before 00:00, end is after 00:00 next day
+      const startH = dt.hour + dt.minute / 60;
+      const endH   = et.hour + et.minute / 60;
+      const crossesMidnight = startH >= CAL_START_H && (endH < startH || endH === 0);
+      // Pixel offset of midnight within the block
+      const midnightOffsetPx = crossesMidnight ? (24 - startH) * HOUR_H : null;
+
       const div = document.createElement('div');
       div.className = 'cal-event ' + (isScheduled ? 'scheduled' : 'browse') + (hasConflict ? ' conflict' : '');
       div.dataset.id = ev.id;
@@ -1245,7 +1254,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         (showVenue && ev.venue ? `<div class="ev-venue">${ev.venue}</div>` : '') +
         (sessionCount > 1 ? `<div class="ev-sessions">${sessionCount} sessions</div>` : '') +
         `<button class="ev-fav-btn${isFav ? ' active' : ''}" title="Favorite">★</button>` +
-        (isNew && !isFav ? '<div class="ev-new">NEW</div>' : '');
+        (isNew && !isFav ? '<div class="ev-new">NEW</div>' : '') +
+        (midnightOffsetPx !== null
+          ? `<div class="ev-midnight-line" style="top:${midnightOffsetPx}px" title="Midnight (12:00 AM)"><span class="ev-midnight-label">12 AM</span></div>`
+          : '');
       return div;
     },
 
@@ -2485,16 +2497,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
       for (const day of st.conventionDays) {
         const iso       = day.toISODate();
-        const dayEvents = st.filteredEvents.filter(ev => {
-          const evDay = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
-          if (evDay === iso) return true;
-          // Overnight continuation: started yesterday, ends today *after* midnight
-          // Events ending exactly at 00:00 are not true overnights — exclude them.
-          const endDt  = DateTime.fromMillis(ev.endMs, { zone: TZ });
-          const endDay = endDt.toISODate();
-          const endsAfterMidnight = endDt.hour > 0 || endDt.minute > 0 || endDt.second > 0;
-          return endDay === iso && evDay !== iso && endsAfterMidnight;
-        });
+        // Only show events in the column where they START. Overnight events
+        // (ending after midnight) render fully in the start-day column because
+        // the calendar already extends to hour 27 (3 AM). No continuation needed.
+        const dayEvents = st.filteredEvents.filter(ev =>
+          DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate() === iso
+        );
         const col = CalRender.renderDayColumn(
           day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
           id => this.selectEvent(id),
