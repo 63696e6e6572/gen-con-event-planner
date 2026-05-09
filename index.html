@@ -268,6 +268,33 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .load-more-btn { display: block; width: 100%; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius); background: none; cursor: pointer; color: var(--color-text-muted); font-size: 12px; text-align: center; }
 .load-more-btn:hover { background: var(--color-surface); }
 
+/* --- Hour view --- */
+.hour-view-container { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
+.hour-band {
+  display: flex; align-items: baseline; gap: 8px;
+  position: sticky; top: 0; background: var(--color-bg);
+  padding: 10px 0 4px; margin: 0 -2px;
+  border-bottom: 2px solid var(--color-border-strong); z-index: 5;
+}
+.hour-band-label { font-size: 13px; font-weight: 700; color: var(--color-text); min-width: 52px; }
+.hour-band-count { font-size: 11px; color: var(--color-text-muted); }
+.hour-event {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 3px 0;
+  background: var(--color-surface); border-radius: var(--radius); border: 1px solid var(--color-border);
+  cursor: pointer; transition: border-color .1s, box-shadow .1s;
+}
+.hour-event:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.hour-event.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
+.hour-event.scheduled { border-left: 3px solid var(--color-primary); }
+.hour-event.conflict  { border-left: 3px solid var(--color-danger); }
+.hour-event-time { font-size: 11px; font-weight: 700; color: var(--color-text); min-width: 48px; white-space: nowrap; }
+.hour-event-ampm { font-size: 9px; font-weight: 400; color: var(--color-text-muted); margin-left: 1px; }
+.hour-event-cat { border-radius: 4px; padding: 2px 5px; font-size: 10px; font-weight: 700; flex: none; white-space: nowrap; }
+.hour-event-body { flex: 1; min-width: 0; }
+.hour-event-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hour-event-meta { font-size: 10px; color: var(--color-text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hour-event-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+
 /* Filter chips bar */
 .filter-chips-bar { display:flex; align-items:center; flex-wrap:wrap; gap:5px; padding:6px 10px; background:var(--color-surface); border-bottom:1px solid var(--color-border); flex:none; }
 .filter-chip { display:inline-flex; align-items:center; gap:3px; background:var(--color-primary-light); color:var(--color-primary); border:1px solid #bfdbfe; border-radius:12px; padding:2px 8px 2px 10px; font-size:11px; font-weight:500; white-space:nowrap; }
@@ -364,6 +391,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 /* ================================================================
    MISC
    ================================================================ */
+/* Auto-download overlay panel */
+@keyframes spin { to { transform: rotate(360deg); } }
+.auto-dl-spinner {
+  width: 48px; height: 48px;
+  border: 4px solid #dbeafe; border-top-color: var(--color-primary);
+  border-radius: 50%; animation: spin .75s linear infinite;
+  margin: 4px auto 20px;
+}
+.auto-dl-spinner.done  { border-color: #bbf7d0; border-top-color: var(--color-success); animation: none; }
+.auto-dl-spinner.error { border-color: #fecaca; border-top-color: var(--color-danger);  animation: none; }
+#auto-dl-msg  { font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 14px; }
+#auto-dl-note { font-size: 12px; color: var(--color-text-muted); margin-top: 8px; min-height: 16px; }
+.auto-dl-bar  { height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
+.auto-dl-bar-fill { height: 100%; background: var(--color-primary); border-radius: 3px; width: 0; transition: width .35s ease; }
+/* Header sync pill */
+#sync-indicator { display: none; align-items: center; gap: 5px; font-size: 11px; color: var(--color-text-muted); background: var(--color-bg); padding: 3px 9px 3px 7px; border-radius: 12px; }
+#sync-indicator.visible { display: flex; }
+.sync-spin { width: 10px; height: 10px; border: 2px solid var(--color-border-strong); border-top-color: var(--color-primary); border-radius: 50%; animation: spin .7s linear infinite; flex: none; }
 .hidden { display: none !important; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -380,9 +425,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
   <div class="import-box">
     <h1>Gen Con Event Planner</h1>
     <p class="tagline">Smart scheduling for the best four days in gaming</p>
-    <div class="drop-zone" id="drop-zone">
-      <div class="drop-zone-icon">📋</div>
-      <p>Drop your Gen Con <strong>.xlsx</strong> here<br>or click to browse</p>
+
+    <!-- Auto-download panel: shown while fetching from gencon.com -->
+    <div id="auto-dl-panel" class="hidden">
+      <div class="auto-dl-spinner" id="auto-dl-spinner"></div>
+      <div id="auto-dl-msg">Connecting to gencon.com…</div>
+      <div class="auto-dl-bar"><div class="auto-dl-bar-fill" id="auto-dl-bar-fill"></div></div>
+      <div id="auto-dl-note">Events are checked for updates every 6 hours</div>
+    </div>
+
+    <!-- Manual import: shown on first visit after failed auto-download, or when user chooses it -->
+    <div id="drop-zone-wrap">
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">📋</div>
+        <p>Drop your Gen Con <strong>.xlsx</strong> here<br>or click to browse</p>
+      </div>
     </div>
     <input type="file" id="file-input" accept=".xlsx">
     <div id="import-status" class="hidden">
@@ -401,9 +458,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
   <header id="header">
     <div class="header-title">Gen Con <span>Event Planner</span></div>
     <div id="schedule-meta"></div>
+    <div id="sync-indicator"><div class="sync-spin"></div><span id="sync-msg">Checking for updates…</span></div>
     <div class="view-toggle">
       <button class="view-btn active" data-view="convention">Convention</button>
       <button class="view-btn" data-view="day">Day</button>
+      <button class="view-btn" data-view="hour">Hour</button>
       <button class="view-btn" data-view="agenda">Agenda</button>
     </div>
     <div id="day-nav">
@@ -537,8 +596,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
   // SECTION 1: CONSTANTS
   // ================================================================
   const TZ = 'America/Indiana/Indianapolis';
-  const STORAGE_EVENTS_KEY = 'gencon_v1_events';
-  const STORAGE_USER_KEY   = 'gencon_v1_user';
+  const STORAGE_EVENTS_KEY  = 'gencon_v1_events';
+  const STORAGE_USER_KEY    = 'gencon_v1_user';
+  const STORAGE_META_KEY    = 'gencon_v1_meta';
+  const XLSX_URL            = 'https://www.gencon.com/downloads/events.xlsx';
+  const AUTO_UPDATE_MS      = 6 * 60 * 60 * 1000; // 6 hours
   const CAL_START_H = 7;   // display from 7 AM
   const CAL_END_H   = 27;  // display to 3 AM next day (hour 27 = 3 AM)
   const HOUR_H      = 72;  // px per hour in calendar
@@ -804,9 +866,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       } catch (e) { return this.defaultUser(); }
     },
 
+    saveMeta(meta) {
+      try { localStorage.setItem(STORAGE_META_KEY, JSON.stringify(meta)); } catch (e) {}
+    },
+    loadMeta() {
+      try {
+        const raw = localStorage.getItem(STORAGE_META_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    },
     clearAll() {
       localStorage.removeItem(STORAGE_EVENTS_KEY);
       localStorage.removeItem(STORAGE_USER_KEY);
+      localStorage.removeItem(STORAGE_META_KEY);
     },
   };
 
@@ -1247,17 +1319,183 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
     },
 
     // ---------- Bootstrap ----------
-    init() {
+    async init() {
       this.bindImport();
       this.bindHeader();
       this.bindFilters();
       this.bindKeyboard();
 
-      // Try loading persisted events
-      const saved = Storage.loadEvents();
+      const saved      = Storage.loadEvents();
+      const meta       = Storage.loadMeta() || {};
+      const needsCheck = (Date.now() - (meta.lastCheckMs || 0)) >= AUTO_UPDATE_MS;
+
       if (saved && saved.length > 0) {
+        // Show app immediately with cached data
         const user = Storage.loadUser();
         this.loadData(saved, user);
+        // Then check for updates in the background if the interval has elapsed
+        if (needsCheck) this.checkForUpdates(false);
+      } else {
+        // No cached events — download in the foreground
+        document.getElementById('auto-dl-panel').classList.remove('hidden');
+        document.getElementById('drop-zone-wrap').classList.add('hidden');
+        await this.checkForUpdates(true);
+      }
+    },
+
+    // ---------- Auto-update ----------
+    async checkForUpdates(foreground) {
+      const meta = Storage.loadMeta() || {};
+      if (!foreground) this.showSyncIndicator(true, 'Checking for updates…');
+
+      try {
+        // Conditional GET: skip body if server says nothing changed
+        const reqHeaders = { 'Cache-Control': 'no-cache' };
+        if (meta.lastModified) reqHeaders['If-Modified-Since'] = meta.lastModified;
+
+        let response;
+        try {
+          response = await fetch(XLSX_URL, { headers: reqHeaders });
+        } catch (err) {
+          // CORS, offline, etc.
+          this.handleDownloadError(foreground,
+            'Could not reach gencon.com — CORS policy or network issue.\nImport the file manually below.');
+          return;
+        }
+
+        if (response.status === 304) {
+          // Nothing new — just reset the clock
+          Storage.saveMeta({ ...meta, lastCheckMs: Date.now() });
+          if (foreground) {
+            this.setDownloadUI('Events are up to date', 100, 'done');
+            await new Promise(r => setTimeout(r, 800));
+            // Show app with previously cached data
+            const saved = Storage.loadEvents();
+            if (saved && saved.length) {
+              this.loadData(saved, Storage.loadUser());
+            } else {
+              this.showManualImport('No cached events found. Import the file below.');
+            }
+          } else {
+            this.showSyncIndicator(false);
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          this.handleDownloadError(foreground, `Server returned ${response.status}.`);
+          return;
+        }
+
+        const lastModified  = response.headers.get('Last-Modified') || '';
+        const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
+
+        // Stream the body so we can show real download progress
+        let arrayBuffer;
+        if (response.body) {
+          const reader = response.body.getReader();
+          const chunks = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            if (foreground) {
+              const pct = contentLength > 0 ? Math.round(received / contentLength * 65) : 20;
+              this.setDownloadUI(`Downloading… ${contentLength > 0 ? pct + '%' : Math.round(received/1024) + ' KB'}`, pct);
+            }
+          }
+          const merged = new Uint8Array(chunks.reduce((s, c) => s + c.length, 0));
+          let off = 0;
+          for (const c of chunks) { merged.set(c, off); off += c.length; }
+          arrayBuffer = merged.buffer;
+        } else {
+          if (foreground) this.setDownloadUI('Downloading…', 30);
+          arrayBuffer = await response.arrayBuffer();
+        }
+
+        if (foreground) this.setDownloadUI('Parsing events…', 68);
+        else this.showSyncIndicator(true, 'Parsing…');
+
+        const prevIds = new Set(this.state.events.map(e => e.id));
+        const hadData = this.state.events.length > 0;
+
+        const events = Parser.parseXLSX(arrayBuffer, pct => {
+          if (foreground) this.setDownloadUI('Parsing events…', 68 + Math.round(pct * 0.27));
+        });
+
+        if (!events.length) {
+          this.handleDownloadError(foreground, 'No events found in the downloaded file.');
+          return;
+        }
+
+        if (foreground) this.setDownloadUI(`Saving ${events.length.toLocaleString()} events…`, 97);
+
+        const saveResult  = Storage.saveEvents(events);
+        Storage.saveMeta({ lastCheckMs: Date.now(), lastModified });
+
+        const newEventIds = hadData
+          ? new Set(events.filter(e => !prevIds.has(e.id)).map(e => e.id))
+          : new Set();
+        const user = Storage.loadUser();
+
+        if (foreground) {
+          this.setDownloadUI(`${events.length.toLocaleString()} events ready!`, 100, 'done');
+          await new Promise(r => setTimeout(r, 700));
+          this.loadData(events, user, newEventIds);
+        } else {
+          this.showSyncIndicator(false);
+          this.loadData(events, user, newEventIds);
+          const n = newEventIds.size;
+          this.showToast(n > 0 ? `Events updated — ${n.toLocaleString()} new` : 'Events up to date', 'success');
+        }
+
+        if (saveResult && !saveResult.ok)    this.showToast('Could not persist events — storage full', 'warning');
+        else if (saveResult && saveResult.partial) this.showToast('Stored with reduced fields due to storage limits', 'warning');
+
+      } catch (err) {
+        console.error('[AutoUpdate]', err);
+        this.handleDownloadError(foreground, err.message);
+      }
+    },
+
+    setDownloadUI(msg, pct, state) {
+      const msgEl = document.getElementById('auto-dl-msg');
+      const fill  = document.getElementById('auto-dl-bar-fill');
+      const spin  = document.getElementById('auto-dl-spinner');
+      const note  = document.getElementById('auto-dl-note');
+      if (msgEl) msgEl.textContent = msg;
+      if (fill)  fill.style.width  = Math.max(0, pct) + '%';
+      if (spin)  spin.className    = 'auto-dl-spinner' + (state ? ' ' + state : '');
+      if (note && state === 'done') note.textContent = '';
+    },
+
+    handleDownloadError(foreground, msg) {
+      if (foreground) {
+        this.setDownloadUI('Auto-download failed', 0, 'error');
+        const note = document.getElementById('auto-dl-note');
+        if (note) note.textContent = msg;
+        // Fall through to manual import
+        this.showManualImport();
+      } else {
+        this.showSyncIndicator(false);
+        this.showToast('Update check failed — using cached events', 'warning');
+      }
+    },
+
+    showManualImport(statusMsg) {
+      document.getElementById('drop-zone-wrap').classList.remove('hidden');
+      if (statusMsg) this.setImportStatus(statusMsg, 'error');
+    },
+
+    showSyncIndicator(show, msg) {
+      const el = document.getElementById('sync-indicator');
+      if (!el) return;
+      el.classList.toggle('visible', show);
+      if (show && msg) {
+        const m = document.getElementById('sync-msg');
+        if (m) m.textContent = msg;
       }
     },
 
@@ -1429,7 +1667,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
     updateDayNav() {
       const nav   = document.getElementById('day-nav');
       const label = document.getElementById('day-nav-label');
-      const show  = this.state.view === 'day';
+      const show  = this.state.view === 'day' || this.state.view === 'hour';
       nav.classList.toggle('visible', show);
       if (show && this.state.conventionDays.length) {
         const day = this.state.conventionDays[this.state.currentDayIdx];
@@ -1605,6 +1843,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
 
       this.rebuildSystemOptions();
+      this.rebuildDayCounts();
+      this.rebuildCategoryCounts();
     },
 
     // Rebuild the Game System dropdown showing counts from filteredEvents,
@@ -1658,6 +1898,76 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         sysEl.value = '';
         st.filters.systems = new Set();
       }
+    },
+
+    // Shared filter predicate — applies every active filter, optionally skipping named ones.
+    // Used by the sidebar count rebuilders so each dimension excludes only itself.
+    passesFilters(ev, skip) {
+      const st = this.state;
+      const f  = st.filters;
+      const h  = () => DateTime.fromMillis(ev.startMs, { zone: TZ }).hour;
+      if (!skip.has('search') && f.search) {
+        if (!(ev.title.toLowerCase().includes(f.search) ||
+              ev.shortDescription.toLowerCase().includes(f.search) ||
+              ev.gm.toLowerCase().includes(f.search) ||
+              ev.system.toLowerCase().includes(f.search) ||
+              ev.id.toLowerCase().includes(f.search))) return false;
+      }
+      if (!skip.has('categories') && f.categories.size > 0 && !f.categories.has(ev.category)) return false;
+      if (!skip.has('systems')    && f.systems.size > 0    && !f.systems.has(ev.system))       return false;
+      if (!skip.has('days')       && f.days.size > 0) {
+        if (!f.days.has(DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate())) return false;
+      }
+      if (!skip.has('venues')     && f.venues.size > 0     && !f.venues.has(ev.venue))         return false;
+      if (!skip.has('timeFrom')   && f.timeFrom && h() < parseInt(f.timeFrom))                  return false;
+      if (!skip.has('timeTo')     && f.timeTo   && h() > parseInt(f.timeTo))                    return false;
+      if (!skip.has('durMin')     && f.durMin   && ev.durationMinutes < parseInt(f.durMin))     return false;
+      if (!skip.has('durMax')     && f.durMax   && ev.durationMinutes > parseInt(f.durMax))     return false;
+      if (!skip.has('costMin')    && f.costMin  && ev.cost < parseFloat(f.costMin))             return false;
+      if (!skip.has('costMax')    && f.costMax  && ev.cost > parseFloat(f.costMax))             return false;
+      if (!skip.has('available')  && f.availableOnly && ev.ticketsAvailable <= 0)               return false;
+      if (!skip.has('favorites')  && f.favoritesOnly && !st.favorites.has(ev.id))               return false;
+      if (!skip.has('scheduled')  && f.scheduledOnly && !st.schedule.has(ev.id))                return false;
+      return true;
+    },
+
+    // Update day filter checkboxes with counts from events matching all active filters EXCEPT days.
+    rebuildDayCounts() {
+      const st = this.state;
+      const skip = new Set(['days']);
+      const counts = {};
+      for (const ev of st.events) {
+        if (this.passesFilters(ev, skip)) {
+          const d = DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate();
+          counts[d] = (counts[d] || 0) + 1;
+        }
+      }
+      document.querySelectorAll('#filter-days .filter-check-item').forEach(item => {
+        const day   = item.querySelector('input').dataset.day;
+        const n     = counts[day] || 0;
+        const badge = item.querySelector('.filter-check-count');
+        if (badge) badge.textContent = n.toLocaleString();
+        item.style.opacity = n === 0 ? '0.38' : '';
+      });
+    },
+
+    // Update category filter checkboxes with counts from events matching all active filters EXCEPT categories.
+    rebuildCategoryCounts() {
+      const st = this.state;
+      const skip = new Set(['categories']);
+      const counts = {};
+      for (const ev of st.events) {
+        if (this.passesFilters(ev, skip)) {
+          counts[ev.category] = (counts[ev.category] || 0) + 1;
+        }
+      }
+      document.querySelectorAll('#filter-categories .filter-check-item').forEach(item => {
+        const cat   = item.querySelector('input').dataset.cat;
+        const n     = counts[cat] || 0;
+        const badge = item.querySelector('.filter-check-count');
+        if (badge) badge.textContent = n.toLocaleString();
+        item.style.opacity = n === 0 ? '0.38' : '';
+      });
     },
 
     clearFilters() {
@@ -1901,6 +2211,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const st = this.state;
       if (st.view === 'agenda')      this.renderAgenda();
       else if (st.view === 'day')    this.renderDayView();
+      else if (st.view === 'hour')   this.renderHourView();
       else                           this.renderConventionView();
       this.renderRightPanel();
     },
@@ -2045,7 +2356,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const colsWrap = document.createElement('div');
       colsWrap.className = 'cal-day-columns';
       const col = CalRender.renderDayColumn(
-        day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups,
+        day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
         id => this.selectEvent(id),
         (id, newStartMs) => this.rescheduleEvent(id, newStartMs)
       );
@@ -2172,6 +2483,104 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const chipsAgenda = this.buildFilterChipsBar();
       if (chipsAgenda) panel.appendChild(chipsAgenda);
       panel.appendChild(wrap);
+    },
+
+    // ---------- Hour view ----------
+    renderHourView() {
+      const st          = this.state;
+      const panel       = document.getElementById('calendar-panel');
+      const day         = st.conventionDays[st.currentDayIdx];
+      if (!day) {
+        panel.innerHTML = '<div class="cal-empty"><div class="cal-empty-icon">📅</div><div>No days loaded</div></div>';
+        return;
+      }
+
+      const iso        = day.toISODate();
+      const conflictSet = this.buildConflictSet();
+
+      // All filtered events for this day, sorted by start time
+      const dayEvents = st.filteredEvents
+        .filter(ev => DateTime.fromMillis(ev.startMs, { zone: TZ }).toISODate() === iso)
+        .sort((a, b) => a.startMs - b.startMs || a.durationMinutes - b.durationMinutes);
+
+      // Group by start hour
+      const byHour = new Map();
+      for (const ev of dayEvents) {
+        const h = DateTime.fromMillis(ev.startMs, { zone: TZ }).hour;
+        if (!byHour.has(h)) byHour.set(h, []);
+        byHour.get(h).push(ev);
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'hour-view-container';
+
+      if (!dayEvents.length) {
+        wrap.innerHTML = '<div class="cal-empty" style="height:200px"><div class="cal-empty-icon">🔍</div><div>No events match your filters for this day</div></div>';
+      } else {
+        for (const [h, evs] of [...byHour.entries()].sort((a, b) => a[0] - b[0])) {
+          const ampm   = h < 12 ? 'AM' : 'PM';
+          const h12    = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          const band   = document.createElement('div');
+          band.className = 'hour-band';
+          band.innerHTML = `<span class="hour-band-label">${h12} ${ampm}</span><span class="hour-band-count">${evs.length} event${evs.length !== 1 ? 's' : ''}</span>`;
+          wrap.appendChild(band);
+
+          for (const ev of evs) {
+            wrap.appendChild(this.buildHourViewRow(ev, conflictSet));
+          }
+        }
+      }
+
+      panel.innerHTML = '';
+      const chips = this.buildFilterChipsBar();
+      if (chips) panel.appendChild(chips);
+      panel.appendChild(wrap);
+    },
+
+    buildHourViewRow(ev, conflictSet) {
+      const st          = this.state;
+      const isScheduled = st.schedule.has(ev.id);
+      const isFav       = st.favorites.has(ev.id);
+      const hasConflict = isScheduled && conflictSet.has(ev.id);
+      const isNew       = st.newEventIds.has(ev.id);
+      const c           = catColor(ev.category);
+      const sTime       = DateTime.fromMillis(ev.startMs, { zone: TZ });
+      const eTime       = DateTime.fromMillis(ev.endMs,   { zone: TZ });
+      const sessionIds  = st.sessionGroups.get(ev.id);
+      const sessionCount = sessionIds ? sessionIds.length : 1;
+
+      const row = document.createElement('div');
+      row.className = 'hour-event' +
+        (isScheduled ? ' scheduled' : '') +
+        (hasConflict ? ' conflict'  : '') +
+        (st.selectedId === ev.id ? ' selected' : '');
+      row.dataset.id = ev.id;
+
+      const mins = sTime.toFormat('mm');
+      row.innerHTML = `
+        <div class="hour-event-time">${sTime.toFormat('h')}${mins !== '00' ? ':' + mins : ''}<span class="hour-event-ampm">${sTime.toFormat('a')}</span></div>
+        <div class="hour-event-cat" style="background:${c.bg};color:${c.tx}">${catLabel(ev.category)}</div>
+        <div class="hour-event-body">
+          <div class="hour-event-title">${ev.title}${sessionCount > 1 ? ` <span class="session-pill">⧗ ${sessionCount}</span>` : ''}${isNew ? ' <span class="new-badge">NEW</span>' : ''}</div>
+          <div class="hour-event-meta">Until ${eTime.toFormat('h:mm a')} · ${ev.durationMinutes} min · ${ev.venue || '—'}${ev.cost > 0 ? ' · $' + ev.cost.toFixed(0) : ' · Free'} · ${ev.ticketsAvailable > 0 ? ev.ticketsAvailable + ' left' : 'Sold out'}</div>
+        </div>
+        <div class="hour-event-actions">
+          ${isScheduled ? '<span class="scheduled-pill">✓</span>' : ''}
+          <button class="favorite-btn ${isFav ? 'active' : ''}" data-id="${ev.id}">★</button>
+        </div>`;
+
+      row.addEventListener('click', e => {
+        if (e.target.classList.contains('favorite-btn')) {
+          this.toggleFavorite(ev.id);
+          e.target.classList.toggle('active');
+          return;
+        }
+        this.selectEvent(ev.id);
+        document.querySelectorAll('.hour-event.selected').forEach(el => el.classList.remove('selected'));
+        row.classList.add('selected');
+      });
+
+      return row;
     },
 
     // ---------- Right panel ----------
