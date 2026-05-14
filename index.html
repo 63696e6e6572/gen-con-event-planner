@@ -382,6 +382,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .summary-stat .stat-val { font-size: 18px; font-weight: 700; color: var(--color-primary); }
 .summary-stat .stat-label { font-size: 10px; color: var(--color-text-muted); }
 .export-actions { display: flex; flex-direction: column; gap: 6px; }
+.backup-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border); }
+.backup-restore-msg { font-size: 11px; margin-top: 4px; padding: 4px 8px; border-radius: var(--radius); display: none; }
+.backup-restore-msg.success { display: block; background: #d1fae5; color: #065f46; }
+.backup-restore-msg.error   { display: block; background: #fee2e2; color: #991b1b; }
 
 /* Recommendations */
 .rec-window { margin-bottom: 10px; }
@@ -462,7 +466,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .auto-dl-spinner.done  { border-color: #bbf7d0; border-top-color: var(--color-success); animation: none; }
 .auto-dl-spinner.error { border-color: #fecaca; border-top-color: var(--color-danger);  animation: none; }
 #auto-dl-msg  { font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 14px; }
-#auto-dl-note { font-size: 12px; color: var(--color-text-muted); margin-top: 8px; min-height: 16px; }
+#auto-dl-note { font-size: 12px; color: var(--color-text-muted); margin-top: 8px; margin-bottom: 12px; min-height: 16px; }
 .auto-dl-bar  { height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; margin-bottom: 4px; }
 .auto-dl-bar-fill { height: 100%; background: var(--color-primary); border-radius: 3px; width: 0; transition: width .35s ease; }
 /* Header sync pill */
@@ -1461,8 +1465,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           response = await fetch(XLSX_URL, { headers: reqHeaders });
         } catch (err) {
           // CORS, offline, etc.
-          this.handleDownloadError(foreground,
-            'Could not reach gencon.com — CORS policy or network issue.\nImport the file manually below.');
+          this.handleDownloadError(foreground, '');
           return;
         }
 
@@ -1576,9 +1579,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
     handleDownloadError(foreground, msg) {
       if (foreground) {
-        this.setDownloadUI('Auto-download failed', 0, 'error');
+        this.setDownloadUI('Auto-download blocked by Gencon.com policy.', 0, 'error');
         const note = document.getElementById('auto-dl-note');
-        if (note) note.textContent = msg;
+        if (note) note.innerHTML = 'Download the Excel spreadsheet<br/>(<a href="https://www.gencon.com/downloads/events.xlsx" target="_blank" rel="noopener">https://www.gencon.com/downloads/events.xlsx</a>)<br/>and manually load it below.';
         // Fall through to manual import
         this.showManualImport();
       } else {
@@ -2415,6 +2418,72 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       });
     },
 
+    backupUserData() {
+      const st = this.state;
+      const backup = {
+        version:    1,
+        exportedAt: new Date().toISOString(),
+        schedule:   [...st.schedule],
+        favorites:  [...st.favorites],
+        prefs:      { ...st.prefs },
+      };
+      const json = JSON.stringify(backup, null, 2);
+      const date = new Date().toISOString().slice(0, 10);
+      Exports.download(json, `gencon_backup_${date}.json`, 'application/json');
+    },
+
+    triggerRestorePicker() {
+      let input = document.getElementById('backup-restore-input');
+      if (!input) {
+        input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.id = 'backup-restore-input';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('change', e => {
+          const file = e.target.files[0];
+          input.value = '';
+          if (file) this.restoreUserData(file);
+        });
+      }
+      input.click();
+    },
+
+    restoreUserData(file) {
+      const showMsg = (text, type) => {
+        const el = document.getElementById('backup-restore-msg');
+        if (!el) return;
+        el.textContent = text;
+        el.className = `backup-restore-msg ${type}`;
+      };
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const backup = JSON.parse(e.target.result);
+          if (!backup.version || !Array.isArray(backup.schedule) || !Array.isArray(backup.favorites)) {
+            showMsg('Invalid backup file.', 'error'); return;
+          }
+          const st = this.state;
+          const validSchedule  = backup.schedule.filter(id => st.eventMap[id]);
+          const validFavorites = backup.favorites.filter(id => st.eventMap[id]);
+          const skipped = (backup.schedule.length + backup.favorites.length) - (validSchedule.length + validFavorites.length);
+          st.schedule  = new Set(validSchedule);
+          st.favorites = new Set(validFavorites);
+          if (backup.prefs) st.prefs = Object.assign(st.prefs, backup.prefs);
+          this.persistUser();
+          this.applyFilters();
+          this.scheduleRender();
+          const msg = `Restored ${validSchedule.length} scheduled and ${validFavorites.length} favorited events.` +
+            (skipped > 0 ? ` (${skipped} IDs not found in current dataset — re-import your XLSX if missing.)` : '');
+          showMsg(msg, 'success');
+        } catch (err) {
+          showMsg('Could not read backup file: ' + err.message, 'error');
+        }
+      };
+      reader.readAsText(file);
+    },
+
     // ---------- Conflict map ----------
     buildConflictSet() {
       const st        = this.state;
@@ -3002,6 +3071,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           <button class="btn btn-secondary" id="exp-csv">⬇ Export CSV</button>
           <button class="btn btn-secondary" id="exp-ical">⬇ Export iCal (.ics)</button>
           <button class="btn btn-ghost"     id="exp-print">🖨 Print Schedule</button>
+        </div>
+        <div class="backup-actions">
+          <button class="btn btn-secondary" id="exp-backup">💾 Save Backup</button>
+          <button class="btn btn-ghost"     id="exp-restore">↩ Restore Backup</button>
+          <div class="backup-restore-msg" id="backup-restore-msg"></div>
         </div>`;
       frag.appendChild(sumSec);
 
@@ -3034,9 +3108,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
       // Wire export buttons after DOM insertion
       setTimeout(() => {
-        document.getElementById('exp-csv')   ?.addEventListener('click', () => Exports.exportCSV(scheduled));
-        document.getElementById('exp-ical')  ?.addEventListener('click', () => Exports.exportICS(scheduled));
-        document.getElementById('exp-print') ?.addEventListener('click', () => Exports.printSchedule(scheduled));
+        document.getElementById('exp-csv')     ?.addEventListener('click', () => Exports.exportCSV(scheduled));
+        document.getElementById('exp-ical')    ?.addEventListener('click', () => Exports.exportICS(scheduled));
+        document.getElementById('exp-print')   ?.addEventListener('click', () => Exports.printSchedule(scheduled));
+        document.getElementById('exp-backup')  ?.addEventListener('click', () => this.backupUserData());
+        document.getElementById('exp-restore') ?.addEventListener('click', () => this.triggerRestorePicker());
       }, 0);
 
       return frag;
