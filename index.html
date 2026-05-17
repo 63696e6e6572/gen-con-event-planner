@@ -2006,7 +2006,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         if (f.costMax && ev.cost > parseFloat(f.costMax)) return false;
         if (f.availableOnly && ev.ticketsAvailable <= 0) return false;
         if (f.favoritesOnly && !st.favorites.has(ev.id)) return false;
-        if (f.scheduledOnly && !st.schedule.has(ev.id)) return false;
+        if (f.scheduledOnly || f.friendsScheduleOnly) {
+          const inMine    = f.scheduledOnly       && st.schedule.has(ev.id);
+          const inFriends = f.friendsScheduleOnly && st.friendsSchedule.has(ev.id);
+          if (!inMine && !inFriends) return false;
+        }
         return true;
       });
 
@@ -2053,7 +2057,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           (!f.costMax  || ev.cost <= parseFloat(f.costMax)) &&
           (!f.availableOnly || ev.ticketsAvailable > 0) &&
           (!f.favoritesOnly || st.favorites.has(ev.id)) &&
-          (!f.scheduledOnly || st.schedule.has(ev.id));
+          ((!f.scheduledOnly && !f.friendsScheduleOnly) ||
+           (f.scheduledOnly && st.schedule.has(ev.id)) ||
+           (f.friendsScheduleOnly && st.friendsSchedule.has(ev.id)));
         if (pass) sysMap[ev.system] = (sysMap[ev.system] || 0) + 1;
       }
 
@@ -2105,8 +2111,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       if (!skip.has('costMax')    && f.costMax  && ev.cost > parseFloat(f.costMax))             return false;
       if (!skip.has('available')  && f.availableOnly && ev.ticketsAvailable <= 0)               return false;
       if (!skip.has('favorites')  && f.favoritesOnly && !st.favorites.has(ev.id))               return false;
-      if (!skip.has('scheduled')  && f.scheduledOnly       && !st.schedule.has(ev.id))          return false;
-      if (!skip.has('friends')    && f.friendsScheduleOnly && !st.friendsSchedule.has(ev.id))   return false;
+      if (!skip.has('scheduled') && (f.scheduledOnly || f.friendsScheduleOnly)) {
+        const inMine    = f.scheduledOnly       && st.schedule.has(ev.id);
+        const inFriends = f.friendsScheduleOnly && st.friendsSchedule.has(ev.id);
+        if (!inMine && !inFriends) return false;
+      }
       return true;
     },
 
