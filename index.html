@@ -203,6 +203,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 }
 .cal-event:hover { filter: brightness(.95); box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 10; }
 .cal-event.scheduled { opacity: 1; }
+.cal-event.friend { opacity: .85; border-left-style: solid; border-left-color: #7c3aed !important; }
 .cal-event.browse { opacity: .55; border-left-style: dashed; }
 .cal-event.browse:hover { opacity: .85; }
 .cal-event.conflict { outline: 2px solid var(--color-danger); outline-offset: 1px; }
@@ -273,6 +274,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .agenda-event:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
 .agenda-event.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
 .agenda-event.scheduled-event { border-left: 3px solid var(--color-primary); }
+.agenda-event.friend-event { border-left: 3px solid #7c3aed; }
 .agenda-event.conflict-event { border-left: 3px solid var(--color-danger); }
 .agenda-event-cat {
   border-radius: 4px; padding: 3px 6px; display: inline-flex; align-items: center;
@@ -284,6 +286,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .agenda-event-meta { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
 .agenda-event-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
 .scheduled-pill { background: var(--color-primary); color: #fff; border-radius: 10px; padding: 2px 7px; font-size: 10px; font-weight: 600; }
+.friend-pill { background: #7c3aed; color: #fff; border-radius: 10px; padding: 2px 7px; font-size: 10px; font-weight: 600; }
 .favorite-btn { background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1; padding: 2px; color: var(--color-text-faint); }
 .favorite-btn.active { color: #f59e0b; }
 .load-more-btn { display: block; width: 100%; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius); background: none; cursor: pointer; color: var(--color-text-muted); font-size: 12px; text-align: center; }
@@ -307,6 +310,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 .hour-event:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
 .hour-event.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
 .hour-event.scheduled { border-left: 3px solid var(--color-primary); }
+.hour-event.friend    { border-left: 3px solid #7c3aed; }
 .hour-event.conflict  { border-left: 3px solid var(--color-danger); }
 .hour-event-time { font-size: 11px; font-weight: 700; color: var(--color-text); min-width: 48px; white-space: nowrap; }
 .hour-event-ampm { font-size: 9px; font-weight: 400; color: var(--color-text-muted); margin-left: 1px; }
@@ -556,6 +560,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         <label class="toggle-row"><input type="checkbox" id="filter-available"> Available tickets only</label>
         <label class="toggle-row"><input type="checkbox" id="filter-favorites"> Favorites only</label>
         <label class="toggle-row"><input type="checkbox" id="filter-scheduled"> My schedule only</label>
+        <label class="toggle-row"><input type="checkbox" id="filter-friends"> Friend's schedule only</label>
       </div>
       <div class="sidebar-section">
         <div class="section-title collapsible" data-body="body-days">Days <span class="toggle-arrow">▸</span></div>
@@ -889,7 +894,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
   // ================================================================
   const Storage = {
     defaultUser() {
-      return { schedule: [], favorites: [], prefs: { sameVenueBuffer: 5, crossVenueBuffer: 15 }, version: 1 };
+      return { schedule: [], favorites: [], friendsSchedule: [], prefs: { sameVenueBuffer: 5, crossVenueBuffer: 15 }, version: 1 };
     },
 
     saveEvents(events) {
@@ -1235,7 +1240,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       return Math.max(durH * HOUR_H, 20); // min 20px
     },
 
-    buildEventBlock(ev, isScheduled, isFav, hasConflict, col, span, containerWidth, sessionCount, isNew) {
+    buildEventBlock(ev, isScheduled, isFav, hasConflict, col, span, containerWidth, sessionCount, isNew, isFriend) {
       const top    = this.msToPx(ev.startMs);
       const height = this.msToDurPx(ev.startMs, ev.endMs);
       const w      = containerWidth ? (containerWidth / span) - 2 : `${100 / span}%`;
@@ -1253,7 +1258,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const midnightOffsetPx = crossesMidnight ? (24 - startH) * HOUR_H : null;
 
       const div = document.createElement('div');
-      div.className = 'cal-event ' + (isScheduled ? 'scheduled' : 'browse') + (hasConflict ? ' conflict' : '');
+      div.className = 'cal-event ' + (isScheduled ? 'scheduled' : isFriend ? 'friend' : 'browse') + (hasConflict ? ' conflict' : '');
       div.dataset.id = ev.id;
       div.style.cssText = `
         top:${top}px; height:${Math.max(height,20)}px;
@@ -1304,7 +1309,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       }
     },
 
-    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, newEventIds, onEventClick, onDrop, onFavClick) {
+    renderDayColumn(dayDt, allEventsForDay, scheduledSet, favSet, conflictSet, sessionGroups, newEventIds, onEventClick, onDrop, onFavClick, friendsSet) {
       const col = document.createElement('div');
       col.className = 'cal-day-col';
       col.dataset.date = dayDt.toISODate();
@@ -1355,11 +1360,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       const fragment  = document.createDocumentFragment();
       for (const { ev, col: c, span } of laid) {
         const isScheduled  = scheduledSet.has(ev.id);
+        const isFriend     = !!(friendsSet && friendsSet.has(ev.id));
         const isFav        = favSet.has(ev.id);
         const hasConflict  = isScheduled && conflictSet.has(ev.id);
         const sessionCount = sessionGroups ? (sessionGroups.get(ev.id) || []).length : 1;
         const isNew        = !!(newEventIds && newEventIds.has(ev.id));
-        const block        = this.buildEventBlock(ev, isScheduled, isFav, hasConflict, c, span, null, sessionCount, isNew);
+        const block        = this.buildEventBlock(ev, isScheduled, isFav, hasConflict, c, span, null, sessionCount, isNew, isFriend);
         block.draggable   = isScheduled;
         block.addEventListener('dragstart', e => {
           e.dataTransfer.setData('text/plain', ev.id);
@@ -1394,8 +1400,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       events:         [],
       eventMap:       {},
       conventionDays: [],
-      schedule:       new Set(),
-      favorites:      new Set(),
+      schedule:        new Set(),
+      favorites:       new Set(),
+      friendsSchedule: new Set(),
       prefs:          { sameVenueBuffer: 5, crossVenueBuffer: 15 },
       view:           'convention',
       currentDayIdx:  0,
@@ -1413,9 +1420,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         durMax:       '',
         costMin:      '',
         costMax:      '',
-        availableOnly:false,
-        favoritesOnly:false,
-        scheduledOnly:false,
+        availableOnly:      false,
+        favoritesOnly:      false,
+        scheduledOnly:      false,
+        friendsScheduleOnly:false,
       },
       filteredEvents: [],
       sessionGroups:  new Map(), // eventId -> [id, id, ...] (all sessions of same title)
@@ -1636,8 +1644,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
       // Load user data
       if (userData) {
-        st.schedule  = new Set(userData.schedule  || []);
-        st.favorites = new Set(userData.favorites || []);
+        st.schedule        = new Set(userData.schedule        || []);
+        st.favorites       = new Set(userData.favorites       || []);
+        st.friendsSchedule = new Set(userData.friendsSchedule || []);
         Object.assign(st.prefs, userData.prefs || {});
       }
 
@@ -1901,6 +1910,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       document.getElementById('filter-available').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-favorites').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-scheduled').addEventListener('change', () => this.onFilterChange());
+      document.getElementById('filter-friends').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-system').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-time-from').addEventListener('change', () => this.onFilterChange());
       document.getElementById('filter-time-to').addEventListener('change', () => this.onFilterChange());
@@ -1927,7 +1937,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       st.filters.search        = document.getElementById('search-input').value.trim().toLowerCase();
       st.filters.availableOnly = document.getElementById('filter-available').checked;
       st.filters.favoritesOnly = document.getElementById('filter-favorites').checked;
-      st.filters.scheduledOnly = document.getElementById('filter-scheduled').checked;
+      st.filters.scheduledOnly       = document.getElementById('filter-scheduled').checked;
+      st.filters.friendsScheduleOnly = document.getElementById('filter-friends').checked;
       st.filters.timeFrom      = document.getElementById('filter-time-from').value;
       st.filters.timeTo        = document.getElementById('filter-time-to').value;
       st.filters.durMin        = document.getElementById('filter-dur-min').value;
@@ -2094,7 +2105,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       if (!skip.has('costMax')    && f.costMax  && ev.cost > parseFloat(f.costMax))             return false;
       if (!skip.has('available')  && f.availableOnly && ev.ticketsAvailable <= 0)               return false;
       if (!skip.has('favorites')  && f.favoritesOnly && !st.favorites.has(ev.id))               return false;
-      if (!skip.has('scheduled')  && f.scheduledOnly && !st.schedule.has(ev.id))                return false;
+      if (!skip.has('scheduled')  && f.scheduledOnly       && !st.schedule.has(ev.id))          return false;
+      if (!skip.has('friends')    && f.friendsScheduleOnly && !st.friendsSchedule.has(ev.id))   return false;
       return true;
     },
 
@@ -2187,6 +2199,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       document.getElementById('filter-available').checked = false;
       document.getElementById('filter-favorites').checked = false;
       document.getElementById('filter-scheduled').checked = false;
+      document.getElementById('filter-friends').checked   = false;
       document.getElementById('filter-system').value = '';
       document.getElementById('filter-time-from').value = '';
       document.getElementById('filter-time-to').value   = '';
@@ -2298,6 +2311,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         document.getElementById('filter-scheduled').checked = false; f.scheduledOnly = false;
       });
 
+      if (f.friendsScheduleOnly) add("Friend's schedule", () => {
+        document.getElementById('filter-friends').checked = false; f.friendsScheduleOnly = false;
+      });
+
       if (!chips.length) return null;
 
       const bar = document.createElement('div');
@@ -2397,6 +2414,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
       this.scheduleRender();
     },
 
+    toggleFriendsSchedule(id) {
+      const st = this.state;
+      if (st.friendsSchedule.has(id)) st.friendsSchedule.delete(id);
+      else                             st.friendsSchedule.add(id);
+      this.persistUser();
+      this.scheduleRender();
+    },
+
     selectEvent(id) {
       this.state.selectedId = id;
       this.renderRightPanel();
@@ -2411,21 +2436,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
     persistUser() {
       const st = this.state;
       Storage.saveUser({
-        schedule:  [...st.schedule],
-        favorites: [...st.favorites],
-        prefs:     st.prefs,
-        version:   1,
+        schedule:        [...st.schedule],
+        favorites:       [...st.favorites],
+        friendsSchedule: [...st.friendsSchedule],
+        prefs:           st.prefs,
+        version:         1,
       });
     },
 
     backupUserData() {
       const st = this.state;
       const backup = {
-        version:    1,
-        exportedAt: new Date().toISOString(),
-        schedule:   [...st.schedule],
-        favorites:  [...st.favorites],
-        prefs:      { ...st.prefs },
+        version:         1,
+        exportedAt:      new Date().toISOString(),
+        schedule:        [...st.schedule],
+        favorites:       [...st.favorites],
+        friendsSchedule: [...st.friendsSchedule],
+        prefs:           { ...st.prefs },
       };
       const json = JSON.stringify(backup, null, 2);
       const date = new Date().toISOString().slice(0, 10);
@@ -2467,14 +2494,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           const st = this.state;
           const validSchedule  = backup.schedule.filter(id => st.eventMap[id]);
           const validFavorites = backup.favorites.filter(id => st.eventMap[id]);
-          const skipped = (backup.schedule.length + backup.favorites.length) - (validSchedule.length + validFavorites.length);
-          st.schedule  = new Set(validSchedule);
-          st.favorites = new Set(validFavorites);
+          const validFriends   = (backup.friendsSchedule || []).filter(id => st.eventMap[id]);
+          const skipped = (backup.schedule.length + backup.favorites.length + (backup.friendsSchedule || []).length)
+                        - (validSchedule.length + validFavorites.length + validFriends.length);
+          st.schedule        = new Set(validSchedule);
+          st.favorites       = new Set(validFavorites);
+          st.friendsSchedule = new Set(validFriends);
           if (backup.prefs) st.prefs = Object.assign(st.prefs, backup.prefs);
           this.persistUser();
           this.applyFilters();
           this.scheduleRender();
-          const msg = `Restored ${validSchedule.length} scheduled and ${validFavorites.length} favorited events.` +
+          const msg = `Restored ${validSchedule.length} scheduled, ${validFavorites.length} favorited, and ${validFriends.length} friend's events.` +
             (skipped > 0 ? ` (${skipped} IDs not found in current dataset — re-import your XLSX if missing.)` : '');
           showMsg(msg, 'success');
         } catch (err) {
@@ -2594,7 +2624,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
           id => this.selectEvent(id),
           (id, newStartMs) => this.rescheduleEvent(id, newStartMs),
-          id => { this.toggleFavorite(id); this.scheduleRender(); }
+          id => { this.toggleFavorite(id); this.scheduleRender(); },
+          st.friendsSchedule
         );
         colsWrap.appendChild(col);
       }
@@ -2663,7 +2694,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         day, dayEvents, st.schedule, st.favorites, conflictSet, st.sessionGroups, st.newEventIds,
         id => this.selectEvent(id),
         (id, newStartMs) => this.rescheduleEvent(id, newStartMs),
-        id => { this.toggleFavorite(id); this.scheduleRender(); }
+        id => { this.toggleFavorite(id); this.scheduleRender(); },
+        st.friendsSchedule
       );
       col.style.flex = '1';
       colsWrap.appendChild(col);
@@ -2725,6 +2757,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           if (shown >= maxShown) break;
           shown++;
           const isScheduled = st.schedule.has(ev.id);
+          const isFriend    = st.friendsSchedule.has(ev.id);
           const isFav       = st.favorites.has(ev.id);
           const hasConflict = isScheduled && conflictSet.has(ev.id);
           const c           = catColor(ev.category);
@@ -2733,7 +2766,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
           const item = document.createElement('div');
           item.className = 'agenda-event' +
-            (isScheduled ? ' scheduled-event' : '') +
+            (isScheduled ? ' scheduled-event' : isFriend ? ' friend-event' : '') +
             (hasConflict ? ' conflict-event'  : '') +
             (st.selectedId === ev.id ? ' selected' : '');
           item.dataset.id = ev.id;
@@ -2755,7 +2788,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
               </div>
             </div>
             <div class="agenda-event-actions">
-              ${isScheduled ? '<span class="scheduled-pill">Scheduled</span>' : ''}
+              ${isScheduled ? '<span class="scheduled-pill">Scheduled</span>' : isFriend ? '<span class="friend-pill">Friend\'s</span>' : ''}
               <button class="favorite-btn ${isFav ? 'active' : ''}" data-id="${ev.id}">★</button>
             </div>`;
 
@@ -2850,6 +2883,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
     buildHourViewRow(ev, conflictSet) {
       const st          = this.state;
       const isScheduled = st.schedule.has(ev.id);
+      const isFriend    = st.friendsSchedule.has(ev.id);
       const isFav       = st.favorites.has(ev.id);
       const hasConflict = isScheduled && conflictSet.has(ev.id);
       const isNew       = st.newEventIds.has(ev.id);
@@ -2861,7 +2895,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
 
       const row = document.createElement('div');
       row.className = 'hour-event' +
-        (isScheduled ? ' scheduled' : '') +
+        (isScheduled ? ' scheduled' : isFriend ? ' friend' : '') +
         (hasConflict ? ' conflict'  : '') +
         (st.selectedId === ev.id ? ' selected' : '');
       row.dataset.id = ev.id;
@@ -2875,7 +2909,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
           <div class="hour-event-meta">Until ${eTime.toFormat('h:mm a')} · ${ev.durationMinutes} min · ${ev.venue || '—'}${ev.cost > 0 ? ' · $' + ev.cost.toFixed(0) : ' · Free'} · ${ev.ticketsAvailable > 0 ? ev.ticketsAvailable + ' left' : 'Sold out'}</div>
         </div>
         <div class="hour-event-actions">
-          ${isScheduled ? '<span class="scheduled-pill">✓</span>' : ''}
+          ${isScheduled ? '<span class="scheduled-pill">✓</span>' : isFriend ? '<span class="friend-pill">👥</span>' : ''}
           <button class="favorite-btn ${isFav ? 'active' : ''}" data-id="${ev.id}">★</button>
         </div>`;
 
@@ -3159,6 +3193,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
             ? `<button class="btn btn-danger" id="btn-remove">Remove from Schedule</button>`
             : `<button class="btn btn-primary" id="btn-add">+ Add to Schedule</button>`}
           <button class="btn btn-ghost" id="btn-fav">${isFav ? '★ Favorited' : '☆ Favorite'}</button>
+        </div>
+        <div class="event-action-bar" style="margin-top:4px">
+          ${st.friendsSchedule.has(id)
+            ? `<button class="btn btn-secondary" id="btn-friend-remove" style="border-color:#7c3aed;color:#7c3aed">👥 Remove from Friend's Schedule</button>`
+            : `<button class="btn btn-secondary" id="btn-friend-add"    style="border-color:#7c3aed;color:#7c3aed">👥 Add to Friend's Schedule</button>`}
         </div>`;
       frag.appendChild(headerSec);
 
@@ -3312,6 +3351,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; f
         });
         document.getElementById('btn-fav')?.addEventListener('click', () => {
           this.toggleFavorite(id);
+          this.renderRightPanel();
+        });
+        document.getElementById('btn-friend-add')?.addEventListener('click', () => {
+          this.toggleFriendsSchedule(id);
+          this.renderRightPanel();
+        });
+        document.getElementById('btn-friend-remove')?.addEventListener('click', () => {
+          this.toggleFriendsSchedule(id);
           this.renderRightPanel();
         });
       }, 0);
